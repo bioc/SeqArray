@@ -830,44 +830,44 @@ seqDelete <- function(gdsfile, info.varname=NULL, format.varname=NULL)
 # Transpose data variable(s)
 #
 
-seqTranspose <- function(gdsfile, var.name, compress=NULL, verbose=TRUE)
-{
-	# check
-	stopifnot(inherits(gdsfile, "gds.class"))
-	stopifnot(is.character(var.name) & (length(var.name)==1))
-
-	node <- index.gdsn(gdsfile, var.name)
-	desp <- objdesp.gdsn(node)
-	dm <- desp$dim
-	if (length(dm) > 1)
-	{
-		# dimension
-		dm <- c(dm[-(length(dm)-1)], 0)
-		# folder
-		index <- unlist(strsplit(var.name, "/"))
-		if (length(index) <= 1)
-			folder <- gdsfile$root
-		else
-			folder <- index.gdsn(gdsfile, index=index[-length(index)])
-		# compress
-		if (is.null(compress))
-			compress <- desp$compress
-
-		name <- paste("~", index[length(index)], sep="")
-		newnode <- add.gdsn(folder, name, val=NULL, storage=desp$type,
-			valdim=dm, compress=compress)
-
-		# write data
-		apply.gdsn(node, margin=length(dm)-1, as.is="none", FUN=function(g) {
-			append.gdsn(newnode, g)
-		})
-
-		readmode.gdsn(newnode)
-	} else
-		warning("It is a vector.")
-
-	invisible()
-}
+# seqTranspose <- function(gdsfile, var.name, compress=NULL, verbose=TRUE)
+# {
+#	# check
+#	stopifnot(inherits(gdsfile, "gds.class"))
+#	stopifnot(is.character(var.name) & (length(var.name)==1))
+#
+#	node <- index.gdsn(gdsfile, var.name)
+#	desp <- objdesp.gdsn(node)
+#	dm <- desp$dim
+#	if (length(dm) > 1)
+#	{
+#		# dimension
+#		dm <- c(dm[-(length(dm)-1)], 0)
+#		# folder
+#		index <- unlist(strsplit(var.name, "/"))
+#		if (length(index) <= 1)
+#			folder <- gdsfile$root
+#		else
+#			folder <- index.gdsn(gdsfile, index=index[-length(index)])
+#		# compress
+#		if (is.null(compress))
+#			compress <- desp$compress
+#
+#		name <- paste("~", index[length(index)], sep="")
+#		newnode <- add.gdsn(folder, name, val=NULL, storage=desp$type,
+#			valdim=dm, compress=compress)
+#
+#		# write data
+#		apply.gdsn(node, margin=length(dm)-1, as.is="none", FUN=function(g) {
+#			append.gdsn(newnode, g)
+#		})
+#
+#		readmode.gdsn(newnode)
+#	} else
+#		warning("It is a vector.")
+#
+#	invisible()
+#}
 
 
 
