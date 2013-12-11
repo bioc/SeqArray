@@ -1114,7 +1114,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header = NULL,
 
     if (verbose)
         cat("Optimize the access efficiency ...\n")
-    cleanup.gds(out.fn, deep=FALSE, verbose=verbose)
+    cleanup.gds(out.fn, verbose=verbose)
 
     # output
     invisible(normalizePath(out.fn))
