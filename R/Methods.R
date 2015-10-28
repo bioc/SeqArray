@@ -131,8 +131,9 @@ setMethod("seqSetFilter", signature(object="SeqVarGDSClass"),
             .Call(SEQ_SetSpaceSample, object, sample.id, setflag, verbose)
         } else if (!is.null(samp.sel))
         {
-            stopifnot(is.vector(samp.sel) & is.logical(samp.sel))
-            .Call(SEQ_SetSpaceSample, object, samp.sel, setflag, verbose)
+            stopifnot(is.vector(samp.sel))
+            stopifnot(is.logical(samp.sel) | is.raw(samp.sel) | is.numeric(samp.sel))
+            .Call(SEQ_SetSpaceSample2, object, samp.sel, setflag, verbose)
         }
 
         if (!is.null(variant.id))
@@ -142,8 +143,9 @@ setMethod("seqSetFilter", signature(object="SeqVarGDSClass"),
             .Call(SEQ_SetSpaceVariant, object, variant.id, setflag, verbose)
         } else if (!is.null(variant.sel))
         {
-            stopifnot(is.vector(variant.sel) & is.logical(variant.sel))
-            .Call(SEQ_SetSpaceVariant, object, variant.sel, setflag, verbose)
+            stopifnot(is.vector(variant.sel))
+            stopifnot(is.logical(variant.sel) | is.raw(variant.sel) | is.numeric(variant.sel))
+            .Call(SEQ_SetSpaceVariant2, object, variant.sel, setflag, verbose)
         } else {
             if (is.null(sample.id) & is.null(samp.sel))
             {
@@ -344,6 +346,7 @@ seqSummary <- function(gdsfile, varname=NULL,
     if (is.character(varname))
         stopifnot(length(varname) == 1L)
     check <- match.arg(check)
+    stopifnot(is.logical(verbose), length(verbose)==1L)
 
     # initialize a GDS object
     if (is.character(gdsfile))
@@ -404,6 +407,38 @@ seqSummary <- function(gdsfile, varname=NULL,
         }
 
         ########
+        n <- index.gdsn(gds, "description/reference", silent=TRUE)
+        if (is.null(n))
+            ans$reference <- character()
+        else
+            ans$reference <- as.character(read.gdsn(n))
+        n <- index.gdsn(gds, "description/vcf.header", silent=TRUE)
+        if (!is.null(n))
+        {
+            tmp <- read.gdsn(n)
+            if (is.data.frame(tmp))
+            {
+                ans$reference <- c(ans$reference,
+                    tmp$value[tmp$id == "reference"])
+            } else
+                STOP("Invalid 'description/vcf.header'.")
+        }
+        ans$reference <- unique(ans$reference)
+        if (verbose)
+        {
+            if (length(ans$reference) > 0)
+            {
+                cat("Reference: ", paste(ans$reference, collapse=", "),
+                    "\n", sep="")
+            } else
+                cat("Reference: unknown\n")
+        }
+
+        ########
+        n <- index.gdsn(gds, "genotype/data")
+        ans$ploidy <- objdesp.gdsn(n)$dim[1L]
+
+        ########
         # the number of samples
         n <- index.gdsn(gds, "sample.id")
         dm <- check_dim(n, 1L)
@@ -419,8 +454,9 @@ seqSummary <- function(gdsfile, varname=NULL,
 
         if (verbose)
         {
-            cat("The number of samples: ", n.samp, "\n", sep="")
-            cat("The number of variants: ", n.variant, "\n", sep="")
+            cat("Ploidy: ", ans$ploidy, "\n", sep="")
+            cat("Number of samples: ", n.samp, "\n", sep="")
+            cat("Number of variants: ", n.variant, "\n", sep="")
         }
 
 
@@ -441,7 +477,7 @@ seqSummary <- function(gdsfile, varname=NULL,
         {
             chr <- seqGetData(gds, "chromosome")
             tab <- table(chr, exclude=NULL)
-            names(dimnames(tab)) <- "The chromosomes:"
+            names(dimnames(tab)) <- "Chromosomes:"
             print(tab)
             rm(chr)
         }
@@ -458,7 +494,7 @@ seqSummary <- function(gdsfile, varname=NULL,
             if (verbose)
             {
                 tab <- table(nallele)
-                names(dimnames(tab)) <- "The number of alleles per site:"
+                names(dimnames(tab)) <- "Number of alleles per site:"
                 print(tab)
             }
         }

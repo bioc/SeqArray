@@ -24,7 +24,7 @@ numeric value (like \code{0L}), it returns a numeric vector for the specified
 alleles (\code{0L} for the reference allele, \code{1L} for the first alternative
 allele, etc). If \code{ref.allele} is a numeric vector, \code{ref.allele}
 specifies each allele per site. If \code{ref.allele} is a character vector,
-\code{ref.allele} specifies the desired allele for each site (e.g.,
+\code{ref.allele} specifies the desired allele for each site (e.g,
 ancestral allele for the derived allele frequency).
 }
 

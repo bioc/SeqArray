@@ -164,15 +164,15 @@ seqVCF.Header <- function(vcf.fn)
             simplify=TRUE, USE.NAMES=FALSE))
         num <- sapply(strsplit(txt, "[|/]"), function(x) length(x) )
         tab <- table(num)
-        num.ploidy <- as.integer(names(which.max(tab)))
+        ploidy <- as.integer(names(which.max(tab)))
     } else
-        num.ploidy <- as.integer(NA)
+        ploidy <- as.integer(NA)
 
     if (is.null(ans))
     {
         rv <- list(fileformat="unknown", info=NULL, filter=NULL, format=NULL,
             alt=NULL, contig=NULL, assembly=NULL, header=NULL,
-            num.ploidy = num.ploidy)
+            ploidy = ploidy)
         class(rv) <- "SeqVCFHeaderClass"
         return(rv)
     }
@@ -307,11 +307,19 @@ seqVCF.Header <- function(vcf.fn)
 
 
     #########################################################
+    # reference=""
+    reference <- NULL
+    s <- ans$value[ans$id == "reference"]
+    if (length(s) > 0L) reference <- s
+    ans <- ans[ans$id != "reference", ]
+
+
+    #########################################################
     # output
 
     rv <- list(fileformat=fileformat, info=INFO, filter=FILTER, format=FORMAT,
-        alt=ALT, contig=contig, assembly=assembly, header=ans,
-        num.ploidy = num.ploidy)
+        alt=ALT, contig=contig, assembly=assembly, reference=reference,
+        header=ans, ploidy = ploidy)
     class(rv) <- "SeqVCFHeaderClass"
     rv
 }
@@ -359,7 +367,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     genotype.var.name="GT", genotype.storage=c("bit2", "bit4", "bit8"),
     storage.option=seqStorage.Option(),
     info.import=NULL, fmt.import=NULL, ignore.chr.prefix="chr",
-    optimize=TRUE, raise.error=TRUE, verbose=TRUE)
+    reference=NULL, optimize=TRUE, raise.error=TRUE, verbose=TRUE)
 {
     # check
     stopifnot(is.character(vcf.fn), length(vcf.fn)>0L)
@@ -375,6 +383,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     stopifnot(is.null(info.import) | is.character(info.import))
     stopifnot(is.null(fmt.import) | is.character(fmt.import))
     stopifnot(is.character(ignore.chr.prefix), length(ignore.chr.prefix)>0L)
+    stopifnot(is.null(reference) | is.character(reference))
     stopifnot(is.logical(optimize), length(optimize)==1L)
     stopifnot(is.logical(raise.error), length(raise.error)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
@@ -495,7 +504,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         cat("The Variant Call Format (VCF) header:\n")
         cat("\tfile format: ", header$fileformat, "\n", sep="")
         cat("\tthe number of sets of chromosomes (ploidy): ",
-            header$num.ploidy, "\n", sep="")
+            header$ploidy, "\n", sep="")
         cat("\tthe number of samples: ", length(samp.id), "\n", sep="")
         cat("\tGDS genotype storage: ", genotype.storage, "\n", sep="")
     }
@@ -568,6 +577,8 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     put.attr.gdsn(n, "vcf.fileformat", header$fileformat)
     if (!is.null(header$assembly))
         put.attr.gdsn(n, "vcf.assembly", header$assembly)
+    reference <- as.character(unique(c(reference, header$reference)))
+    AddVar(n, "reference", reference, closezip=TRUE, visible=FALSE)
     if (!is.null(header$alt))
     {
         if (nrow(header$alt) > 0L)
@@ -614,10 +625,10 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     put.attr.gdsn(varGeno, "Description", geno_format$Description[1L])
 
     # add data to the folder of genotype
-    if (header$num.ploidy > 1L)
+    if (header$ploidy > 1L)
     {
         geno.node <- AddVar(varGeno, "data", storage=genotype.storage,
-            valdim=c(header$num.ploidy, nSamp, 0L), vn=FALSE)
+            valdim=c(header$ploidy, nSamp, 0L), vn=FALSE)
     } else {
         geno.node <- AddVar(varGeno, "data", storage=genotype.storage,
             valdim=c(1L, nSamp, 0L), vn=FALSE)
@@ -633,13 +644,13 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
 
     # add phase folder
     varPhase <- addfolder.gdsn(gfile, "phase")
-    if (header$num.ploidy > 1L)
+    if (header$ploidy > 1L)
     {
         # add data
-        if (header$num.ploidy > 2L)
+        if (header$ploidy > 2L)
         {
             AddVar(varPhase, "data", storage="bit1",
-                valdim=c(header$num.ploidy-1L, nSamp, 0L), vn=FALSE)
+                valdim=c(header$ploidy-1L, nSamp, 0L), vn=FALSE)
         } else {
             AddVar(varPhase, "data", storage="bit1", valdim=c(nSamp, 0L),
                 vn=FALSE)
