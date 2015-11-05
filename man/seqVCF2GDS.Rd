@@ -60,8 +60,9 @@ adopted by setting
 
     By default, the compression method is "ZIP_RA" (zlib algorithm with default
 compression level + multiple independent data blocks). Users can maximize the
-compression ratio by \code{storage.option=seqStorage.Option("ZIP_RA.max")}.
-    LZ4 (an extremely fast compression algorithm) is an option via
+compression ratio by \code{seqStorage.Option("ZIP_RA.max")}.
+    LZ4 (an extremely fast compression algorithm,
+\url{http://cyan4973.github.io/lz4/}) is an option via
 \code{storage.option=seqStorage.Option("LZ4_RA")}.
 }
 \references{
@@ -70,8 +71,6 @@ compression ratio by \code{storage.option=seqStorage.Option("ZIP_RA.max")}.
     Handsaker RE, Lunter G, Marth GT, Sherry ST, McVean G, Durbin R;
     1000 Genomes Project Analysis Group.
     Bioinformatics. 2011 Aug 1;27(15):2156-8. Epub 2011 Jun 7.
-
-    \url{http://cyan4973.github.io/lz4/}
 }
 
 \author{Xiuwen Zheng}
