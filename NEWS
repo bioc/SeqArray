@@ -1,7 +1,21 @@
-CHANGES IN VERSION 1.10.0
+CHANGES IN VERSION 1.11.0-1.11.1
+-------------------------
+
+    o 
+
+
+CHANGES IN VERSION 1.10.0-1.10.3
 -------------------------
 
     o The version number was bumped for the Bioconductor release version 3.2
+
+    o fix a memory issue in `seqAlleleFreq()` when 'ref.allele' is a vector
+
+    o `seqSetFilter()` allows numeric vectors in 'samp.sel' and 'variant.sel'
+
+    o `seqSummary()` returns ploidy and reference
+
+    o `seqStorage.Option()` controls the compression level of FORMAT/DATA
 
 
 CHANGES IN VERSION 1.9.0-1.9.19
