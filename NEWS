@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.10.0-1.10.4
+CHANGES IN VERSION 1.10.0-1.10.5
 -------------------------
 
     o The version number was bumped for the Bioconductor release version 3.2
@@ -14,6 +14,8 @@ CHANGES IN VERSION 1.10.0-1.10.4
     o `seqVCF2GDS()` allows extract part of VCF files via 'start' and 'count'
 
     o `seqMerge()` combines multiple GDS files with the same samples
+
+    o export methods for compatibility with VariantAnnotation
 
 
 CHANGES IN VERSION 1.9.0-1.9.19
