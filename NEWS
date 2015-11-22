@@ -1,7 +1,7 @@
-CHANGES IN VERSION 1.10.0-1.10.5
+CHANGES IN VERSION 1.10.0-1.10.6
 -------------------------
 
-    o The version number was bumped for the Bioconductor release version 3.2
+    o the version number was bumped for the Bioconductor release version 3.2
 
     o fix a memory issue in `seqAlleleFreq()` when 'ref.allele' is a vector
 
@@ -16,6 +16,16 @@ CHANGES IN VERSION 1.10.0-1.10.5
     o `seqMerge()` combines multiple GDS files with the same samples
 
     o export methods for compatibility with VariantAnnotation
+
+    o a new argument '.useraw' in `seqGetFilter()`
+
+    o a new argument 'allow.duplicate' in `seqOpen()`
+
+    o fix a bug in `seqParallel()`
+      (https://github.com/zhengxwen/SeqArray/issues/11) and optimize
+      its performance
+
+    o 'gdsfile' could be NULL in `seqParallel()`
 
 
 CHANGES IN VERSION 1.9.0-1.9.19

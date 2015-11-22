@@ -9,14 +9,16 @@
 #######################################################################
 # Open a SeqArray GDS file
 #
-seqOpen <- function(gds.fn, readonly=TRUE)
+seqOpen <- function(gds.fn, readonly=TRUE, allow.duplicate=FALSE)
 {
     # check
     stopifnot(is.character(gds.fn), length(gds.fn)==1L)
     stopifnot(is.logical(readonly), length(readonly)==1L)
+    stopifnot(is.logical(allow.duplicate), length(allow.duplicate)==1L)
 
     # open the file
-    ans <- openfn.gds(gds.fn, readonly=readonly, allow.fork=TRUE)
+    ans <- openfn.gds(gds.fn, readonly=readonly, allow.fork=TRUE,
+        allow.duplicate=allow.duplicate)
 
     # FileFormat
     at <- get.attr.gdsn(ans$root)
@@ -234,12 +236,12 @@ seqSetFilterChrom <- function(gdsfile, include=NULL, is.num=NA,
 #######################################################################
 # To get a working space
 #
-seqGetFilter <- function(gdsfile)
+seqGetFilter <- function(gdsfile, .useraw=FALSE)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
 
-    .Call(SEQ_GetSpace, gdsfile)
+    .Call(SEQ_GetSpace, gdsfile, .useraw)
 }
 
 

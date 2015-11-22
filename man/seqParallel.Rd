@@ -16,7 +16,7 @@ seqParallel(cl=getOption("seqarray.parallel", FALSE), gdsfile, FUN,
         a cluster object for parallel processing, created by the functions
         in the package \code{\link{parallel}}, like \code{\link{makeCluster}}.
         See details}
-    \item{gdsfile}{a \code{\link{SeqVarGDSClass}} object}
+    \item{gdsfile}{a \code{\link{SeqVarGDSClass}} object, or \code{NULL}}
     \item{FUN}{the function to be applied, should be like
         \code{FUN(gdsfile, ...)}}
     \item{split}{split the dataset by variant or sample according to multiple
@@ -40,6 +40,15 @@ Windows, users have to create a cluster object via \code{\link{makeCluster}}.
     It is strongly suggested to use \code{seqParallel} together with
 \code{seqParallelSetup}. \code{seqParallelSetup} could work around the problem
 of forking on Windows.
+
+    The user-defined function could use two predefined variables
+\code{.process_count} and \code{.process_index} to tell the total number of
+cluster nodes and which cluster node being used.
+
+    \code{seqParallel(, gdsfile=NULL, FUN=..., split="none")} might be used to
+setup multiple streams of pseudo-random numbers, and see
+\code{\link{nextRNGStream}} or \code{\link{nextRNGSubStream}} in the package
+\code{parallel}.
 }
 \value{
     A vector or list of values.
@@ -85,8 +94,8 @@ summary(afreq2)
 
 
 # check
+length(afreq1)  # 1348
 all(afreq1 == afreq2)
-
 
 ################################################################
 # check -- variant splits
@@ -99,6 +108,14 @@ seqParallel(, gdsfile, FUN = function(f) {
 
 
 ################################################################
+
+seqParallel(, NULL, FUN = function() {
+        paste(.process_index, .process_count, sep="/")
+    }, split = "none")
+
+
+################################################################
+
 
 # close the GDS file
 seqClose(gdsfile)
