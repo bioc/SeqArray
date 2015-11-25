@@ -890,7 +890,7 @@ seqParallel <- function(cl=getOption("seqarray.parallel", FALSE),
 {
     # check
     stopifnot(is.null(cl) | is.logical(cl) | is.numeric(cl) | inherits(cl, "cluster"))
-    stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+    stopifnot(is.null(gdsfile) | inherits(gdsfile, "SeqVarGDSClass"))
     stopifnot(is.function(FUN))
     split <- match.arg(split)
     stopifnot(is.character(.combine) | is.function(.combine))
@@ -901,6 +901,12 @@ seqParallel <- function(cl=getOption("seqarray.parallel", FALSE),
         stopifnot(length(.combine) == 1L)
         if (!(.combine %in% c("unlist", "list", "none")))
             .combine <- match.fun(.combine)
+    }
+
+    if (is.null(gdsfile))
+    {
+        if (split != "none")
+            stop("'split' should be 'none' if 'gdsfile=NULL'.")
     }
 
     if (is.null(cl) | identical(cl, FALSE) | identical(cl, 1L) | identical(cl, 1))
@@ -958,13 +964,24 @@ seqParallel <- function(cl=getOption("seqarray.parallel", FALSE),
             mc.preschedule=FALSE, mc.cores=cl, mc.cleanup=TRUE,
             FUN = function(i, .fun)
             {
-                sel <- .Call(SEQ_SplitSelection, gdsfile, split, i, cl,
-                    .selection.flag)
-                # call the user-defined function
-                if (.selection.flag)
-                    FUN(gdsfile, sel, ...)
-                else
-                    FUN(gdsfile, ...)
+                # export to global variables
+                assign(".process_index", i, envir = .GlobalEnv)
+                assign(".process_count", cl, envir = .GlobalEnv)
+
+                if (!is.null(gdsfile))
+                {
+                    sel <- .Call(SEQ_SplitSelection, gdsfile, split, i, cl,
+                        .selection.flag)
+
+                    # call the user-defined function
+                    if (.selection.flag)
+                        FUN(gdsfile, sel, ...)
+                    else
+                        FUN(gdsfile, ...)
+                } else {
+                    # call the user-defined function
+                    FUN(...)
+                }
             }, .fun = FUN)
 
         if (is.list(ans))
@@ -1002,34 +1019,51 @@ seqParallel <- function(cl=getOption("seqarray.parallel", FALSE),
                 if (dm[1L] <= 0) stop("No samples selected.")
                 if (length(cl) > dm[1L]) cl <- cl[seq_len(dm[1L])]
             }
+
+            sel <- seqGetFilter(gdsfile, .useraw=TRUE)
+        } else {
+            sel <- list(sample.sel=raw(), variant.sel=raw())
         }
 
         ans <- .DynamicClusterCall(cl, length(cl), .fun =
-            function(.idx, .n_process, .gds.fn, .selection, FUN, .split, .selection.flag, ...)
+            function(.proc_idx, .proc_cnt, .gds.fn, .sel_sample, .sel_variant,
+                FUN, .split, .selection.flag, ...)
         {
+            # export to global variables
+            assign(".process_index", .proc_idx, envir = .GlobalEnv)
+            assign(".process_count", .proc_cnt, envir = .GlobalEnv)
+
             # load the package
             library("SeqArray")
 
-            # open the file
-            gfile <- seqOpen(.gds.fn)
-            on.exit({ closefn.gds(gfile) })
+            if (!is.null(.gds.fn))
+            {
+                # open the file
+                .file <- seqOpen(.gds.fn, readonly=TRUE, allow.duplicate=TRUE)
+                on.exit({ seqClose(.file) })
 
-            # set filter
-            seqSetFilter(gfile, samp.sel=.selection$sample.sel,
-                variant.sel=.selection$variant.sel)
+                # set filter
+                seqSetFilter(.file,
+                    samp.sel = memDecompress(.sel_sample, type="gzip"),
+                    variant.sel = memDecompress(.sel_variant, type="gzip"))
+                .ss <- .Call(SEQ_SplitSelection, .file, .split, .proc_idx,
+                    .proc_cnt, .selection.flag)
 
-            sel <- .Call(SEQ_SplitSelection, gfile, .split, .idx, .n_process,
-                .selection.flag)
-            # call the user-defined function
-            if (.selection.flag)
-                FUN(gdsfile, sel, ...)
-            else
-                FUN(gdsfile, ...)
+                # call the user-defined function
+                if (.selection.flag)
+                    FUN(.file, .ss, ...)
+                else
+                    FUN(.file, ...)
+            } else {
+                FUN(...)
+            }
 
         }, .combinefun = .combine, .stopcluster=FALSE,
-            .n_process = length(cl), .gds.fn = gdsfile$filename,
-            .selection = seqGetFilter(gdsfile), FUN = FUN,
-            .split = split, .selection.flag=.selection.flag, ...
+            .proc_cnt = length(cl), .gds.fn = gdsfile$filename,
+            .sel_sample = memCompress(sel$sample.sel, type="gzip"),
+            .sel_variant = memCompress(sel$variant.sel, type="gzip"),
+            FUN = FUN, .split = split, .selection.flag=.selection.flag,
+            ...
         )
 
         if (is.list(ans) & identical(.combine, "unlist"))
@@ -1056,7 +1090,7 @@ seqParallel <- function(cl=getOption("seqarray.parallel", FALSE),
 #
 
 seqDelete <- function(gdsfile, info.varname=character(),
-    format.varname=character(), verbose=TRUE)
+    format.varname=character(), samp.varname=character(), verbose=TRUE)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
@@ -1065,7 +1099,8 @@ seqDelete <- function(gdsfile, info.varname=character(),
 
     stopifnot(is.character(info.varname))
     stopifnot(is.character(format.varname))
-    stopifnot(is.logical(verbose))
+    stopifnot(is.character(samp.varname))
+    stopifnot(is.logical(verbose), length(verbose)==1L)
 
     if (verbose) cat("Delete INFO variable(s):")
     for (nm in info.varname)
@@ -1083,6 +1118,15 @@ seqDelete <- function(gdsfile, info.varname=character(),
     for (nm in format.varname)
     {
         n <- index.gdsn(gdsfile, paste0("annotation/format/", nm))
+        delete.gdsn(n, force=TRUE)
+        if (verbose) cat("", nm)
+    }
+    if (verbose) cat("\n")
+
+    if (verbose) cat("Delete Sample Annotation variable(s):")
+    for (nm in samp.varname)
+    {
+        n <- index.gdsn(gdsfile, paste0("sample.annotation/", nm))
         delete.gdsn(n, force=TRUE)
         if (verbose) cat("", nm)
     }
@@ -1197,7 +1241,7 @@ seqOptimize <- function(gdsfn, target=c("by.sample"),
     stopifnot(is.logical(cleanup))
     stopifnot(is.logical(verbose))
 
-    gdsfile <- seqOpen(gdsfn, FALSE)
+    gdsfile <- seqOpen(gdsfn, readonly=FALSE)
     on.exit({ seqClose(gdsfile) })
 
     if (target == "by.sample")

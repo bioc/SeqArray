@@ -13,16 +13,15 @@
 
 .seldim <- function(gdsfile)
 {
-    z <- seqSummary(gdsfile, "genotype", check="none", verbose=FALSE)
-    # z$seldim[1] -- # of selected samples
-    # z$seldim[2] -- # of selected variants
-    z$seldim
+    # seldim[1L] -- # of selected samples
+    # seldim[2L] -- # of selected variants
+    .Call(SEQ_Summary, gdsfile, "genotype")$seldim
 }
 
 
 
 #######################################################################
-# Internal C function
+# Internal C functions
 #
 
 .cfunction0 <- function(name)

@@ -1,44 +1,36 @@
 \name{seqSummary}
 \alias{seqSummary}
-\title{Summarize the Sequence GDS File}
+\title{Summarize the SeqArray GDS File}
 \description{
-    Gets the summary of sequence GDS file.
+    Gets the summary of SeqArray GDS file.
 }
 \usage{
-seqSummary(gdsfile, varname=NULL, check=c("check", "full.check", "none"),
+seqSummary(gdsfile, varname=NULL, check=c("default", "none", "full"),
     verbose=TRUE)
 }
 \arguments{
     \item{gdsfile}{a \code{\link{SeqVarGDSClass}} object}
     \item{varname}{if \code{NULL}, check the whole GDS file; or a character
         specifying variable name, and return a description of that variable.
-        See details.}
-    \item{check}{should be one of "check", "full.check", "none"}
+        See details}
+    \item{check}{should be one of "default", "none", "full"}
     \item{verbose}{if \code{TRUE}, display information}
 }
 \value{
-    If \code{varname = NULL}, the function returns a list:
+    If \code{varname=NULL}, the function returns a list:
     \item{filename}{the file name}
-    \item{format.version}{the sequencing format in GDS}
+    \item{version}{the version of SeqArray format}
     \item{reference}{genome reference, a character vector (0-length for
         undefined)}
     \item{ploidy}{the number of sets of chromosomes}
-    \item{num.of.sample}{the number of samples}
-    \item{num.of.variant}{the number of variants}
-    \item{info}{the description of the INFO field: \code{var.name},
-        \code{number}, \code{type} and \code{description}}
-    \item{format}{the description of the FORMAT field: \code{var.name},
-        \code{number}, \code{type} and \code{description}}
-    \item{sample.annot}{the description of the sample annotation:
-        \code{var.name}}
-
-    ---
-    \code{seqSummary(gdsfile, "annotation/filter", verbose=FALSE)}
-returns a list with components:
-    \item{id}{ploidy, # of samples, # of variants}
-    \item{description}{# of selected samples, # of selected variants}
-    \item{tab}{cross tabulation for the variable 'filter', if
-        \code{check="check"} or \code{"full.check"}}
+    \item{num.sample}{the total number of samples}
+    \item{num.variant}{the total number of variants}
+    \item{info}{a \code{data.frame} of INFO field: ID, Number, Type,
+        Description, Source, Version}
+    \item{format}{a \code{data.frame} of FORMAT field: ID, Number, Type,
+        Description}
+    \item{sample.annot}{a \code{data.frame} of sample annotation with ID,
+        Type and Description}
 
     ---
     \code{seqSummary(gdsfile, "genotype", check="none", verbose=FALSE)} returns
@@ -47,14 +39,44 @@ a list with components:
     \item{seldim}{# of selected samples, # of selected variants}
 
     ---
-    \code{seqSummary(gdsfile, check="none", verbose=FALSE)$reference} returns
-the genome reference if it is defined.
+    \code{seqSummary(gdsfile, "allele")} returns a data.frame with ID and
+descriptions (\code{check="none"}), or a list with components:
+    \item{value}{a data.frame with ID and Description}
+    \item{table}{cross tabulation for the number of alleles per site}
+
+    ---
+    \code{seqSummary(gdsfile, "annotation/filter")} returns a data.frame with
+ID and description (\code{check="none"}), or a list with components:
+    \item{value}{a data.frame with ID and Description}
+    \item{table}{cross tabulation for the variable 'filter'}
+
+    ---
+    \code{seqSummary(gdsfile, "annotation/info")} returns a \code{data.frame}
+describing VCF INFO header with ID, Number, Type, Description, Source and
+Version.
+
+    ---
+    \code{seqSummary(gdsfile, "annotation/format")} returns a \code{data.frame}
+describing VCF FORMAT header with ID, Number, Type and Description. The first
+row is used for genotypes.
+
+    ---
+    \code{seqSummary(gdsfile, "sample.annotation")} returns a \code{data.frame}
+describing sample annotation with ID, Type and Description.
+
+    ---
+    \code{seqSummary(gdsfile, "$reference")} returns the genome reference
+if it is defined (a 0-length character vector if undefined).
+
+    ---
+    \code{seqSummary(gdsfile, "$contig")} returns the contig information,
+a \code{data.frame} including ID.
 }
 \details{
-    If \code{check = "check"}, this function performs regular checking:
-dimensions of variables, etc. If \code{check = "full.check"}, it performs
-more checking: unique sample id, unique variant id, whether genotypic data
-are in a valid range or not, etc.
+    If \code{check = "default"}, the function performs regular checking, like
+variable dimensions. If \code{check = "full"}, it performs more checking, e.g.,
+unique sample id, unique variant id, whether genotypic data are in a valid
+range or not.
 }
 
 \author{Xiuwen Zheng}
@@ -63,6 +85,8 @@ are in a valid range or not, etc.
 }
 
 \examples{
+library(SeqArray)
+
 # the GDS file
 (gds.fn <- seqExampleFileName("gds"))
 
@@ -70,7 +94,19 @@ seqSummary(gds.fn)
 
 seqSummary(gds.fn, "genotype")
 
+seqSummary(gds.fn, "allele")
+
 seqSummary(gds.fn, "annotation/filter")
+
+seqSummary(gds.fn, "annotation/info")
+
+seqSummary(gds.fn, "annotation/format")
+
+seqSummary(gds.fn, "sample.annotation")
+
+seqSummary(gds.fn, "$reference")
+
+seqSummary(gds.fn, "$contig")
 
 
 # open a GDS file
