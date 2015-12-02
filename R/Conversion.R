@@ -1001,17 +1001,19 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
         aa$FileVersion <- "v1.0"
     cat("##source=SeqArray_Format_", aa$FileVersion, "\n", sep="", file=ofile)
 
+    # reference
+    if (length(z$reference) > 0L)
+        cat("##reference=", z$reference[1L], "\n", sep="", file=ofile)
+
     # assembly
     if (!is.null(a$vcf.assembly))
         cat("##assembly=", dq(a$vcf.assembly), "\n", sep="", file=ofile)
 
     # ALT=<ID=type,Description=description>
-    n <- index.gdsn(gdsfile, "description/vcf.alt", silent=TRUE)
-    if (!is.null(n))
+    for (i in seq_len(nrow(z$allele)))
     {
-        dat <- read.gdsn(n)
         s <- sprintf("##ALT=<ID=%s,Description=%s>",
-            as.character(dat$ID), dq(dat$Description))
+            as.character(z$allele[i,1L]), dq(z$allele[i,2L]))
         writeLines(s, con=ofile)
     }
 
