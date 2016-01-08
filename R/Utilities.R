@@ -143,13 +143,17 @@ seqParallelSetup <- function(cluster=TRUE, verbose=TRUE)
 # Export to a GDS file
 #
 seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
-    samp.var=NULL, verbose=TRUE)
+    samp.var=NULL, optimize=TRUE, digest=TRUE, verbose=TRUE)
 {
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
     stopifnot(is.character(out.fn), length(out.fn)==1L)
+
     stopifnot(is.null(info.var) | is.character(info.var))
     stopifnot(is.null(fmt.var) | is.character(fmt.var))
     stopifnot(is.null(samp.var) | is.character(samp.var))
+
+    stopifnot(is.logical(optimize), length(optimize)==1L)
+    stopifnot(is.logical(digest) | is.character(digest), length(digest)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
 
     #######################################################################
@@ -327,6 +331,21 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
             cp(node, S$sample.sel, nm, paste("sample.annotation", nm, sep="/"))
     }
 
+    .DigestFile(outfile, digest, verbose)
+
+    on.exit()
+    closefn.gds(outfile)
+
+    if (verbose) cat("Done.\n")
+
+    # optimize access efficiency
+    if (optimize)
+    {
+        if (verbose)
+            cat("Optimize the access efficiency ...\n")
+        cleanup.gds(out.fn, verbose=verbose)
+    }
+
     # output
     invisible(normalizePath(out.fn))
 }
@@ -336,7 +355,8 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
 #######################################################################
 # Merge multiple GDS files
 #
-seqMerge <- function(gds.fn, out.fn, storage.option=seqStorage.Option(),
+seqMerge <- function(gds.fn, out.fn,
+    storage.option=seqStorage.Option("ZIP_RA.default"),
     info.var=NULL, fmt.var=NULL, samp.var=NULL, optimize=TRUE, digest=TRUE,
     verbose=TRUE)
 {
@@ -357,7 +377,8 @@ seqMerge <- function(gds.fn, out.fn, storage.option=seqStorage.Option(),
     if (verbose)
     {
         cat(date(), "\n", sep="")
-        cat(sprintf("Merging %d GDS files:\n", length(gds.fn)))
+        cat(sprintf("Preparing merging %d GDS files:\n",
+            length(gds.fn)))
     }
 
     # open all GDS files
@@ -365,6 +386,11 @@ seqMerge <- function(gds.fn, out.fn, storage.option=seqStorage.Option(),
     on.exit({ for (f in flist) seqClose(f) })
     for (i in seq_along(gds.fn))
         flist[[i]] <- seqOpen(gds.fn[i])
+    if (verbose)
+    {
+        s <- sum(file.size(gds.fn), na.rm=TRUE)
+        cat("   ", .pretty(s), "bytes in total\n")
+    }
 
     # samples
     samp.id <- samp2.id <- seqGetData(flist[[1L]], "sample.id")
@@ -377,8 +403,9 @@ seqMerge <- function(gds.fn, out.fn, storage.option=seqStorage.Option(),
 
     if (verbose)
     {
-        cat(sprintf("    %d sample(s) in total, %d sample(s) in common\n",
-            length(samp.id), length(samp2.id)))
+        cat(sprintf("    %d sample%s in total, %d sample%s in common\n",
+            length(samp.id), .plural(length(samp.id)),
+            length(samp2.id), .plural(length(samp2.id))))
     }
 
     # variants
@@ -386,17 +413,28 @@ seqMerge <- function(gds.fn, out.fn, storage.option=seqStorage.Option(),
         paste(seqGetData(f, "chromosome"), seqGetData(f, "position"), sep="-")
     }
     variant.id <- variant2.id <- variant(flist[[1L]])
-    for (f in flist[-1L])
+    if (verbose)
     {
-        s <- variant(f)
+        cat(sprintf("    [%-2d] %s (%s variant%s)\n", 1L, basename(gds.fn[1L]),
+            .pretty(length(variant.id)), .plural(length(variant.id))))
+    }
+    for (i in seq_along(flist)[-1L])
+    {
+        s <- variant(flist[[i]])
+        if (verbose)
+        {
+            cat(sprintf("    [%-2d] %s (%s variant%s)\n", i,
+                basename(gds.fn[i]), .pretty(length(s)), .plural(length(s))))
+        }
         variant.id <- unique(c(variant.id, s))
         variant2.id <- intersect(variant2.id, s)
     }
 
     if (verbose)
     {
-        cat(sprintf("    %d variant(s) in total, %d variant(s) in common\n",
-            length(variant.id), length(variant2.id)))
+        cat(sprintf("    %s variant%s in total, %s variant%s in common\n",
+            .pretty(length(variant.id)), .plural(length(variant.id)),
+            .pretty(length(variant2.id)), .plural(length(variant2.id))))
     }
 
     # common samples
@@ -412,6 +450,9 @@ seqMerge <- function(gds.fn, out.fn, storage.option=seqStorage.Option(),
     ## create a GDS file
     gfile <- createfn.gds(out.fn)
     on.exit({ if (!is.null(gfile)) closefn.gds(gfile) }, add=TRUE)
+
+    if (verbose)
+        cat("Output: ", normalizePath(out.fn), "\n", sep="")
 
     put.attr.gdsn(gfile$root, "FileFormat", "SEQ_ARRAY")
     put.attr.gdsn(gfile$root, "FileVersion", "v1.0")
@@ -522,7 +563,10 @@ seqMerge <- function(gds.fn, out.fn, storage.option=seqStorage.Option(),
         for (i in seq_along(flist))
         {
             if (verbose)
+            {
                 cat(ifelse(i > 1L, ", ", ""), i, sep="")
+                flush.console()
+            }
             sid <- seqGetData(flist[[i]], "sample.id")
             n3 <- index.gdsn(flist[[i]], "genotype/data")
             n4 <- index.gdsn(flist[[i]], "phase/data")
@@ -771,7 +815,10 @@ seqMerge <- function(gds.fn, out.fn, storage.option=seqStorage.Option(),
             for (j in seq_along(flist))
             {
                 if (verbose)
+                {
                     cat(ifelse(j > 1L, ", ", ""), j, sep="")
+                    flush.console()
+                }
                 f <- flist[[j]]
                 n6 <- index.gdsn(f, paste0("annotation/format/", varnm[i]),
                     silent=TRUE)
@@ -885,8 +932,8 @@ seqMerge <- function(gds.fn, out.fn, storage.option=seqStorage.Option(),
 #######################################################################
 # Storage options for the SeqArray GDS file
 #
-seqStorage.Option <- function(compression=c("ZIP_RA", "ZIP_RA.max", "LZ4_RA",
-    "LZ4_RA.max", "none"), float.mode="float32",
+seqStorage.Option <- function(compression=c("ZIP_RA.default", "ZIP_RA",
+    "ZIP_RA.max", "LZ4_RA", "LZ4_RA.max", "none"), float.mode="float32",
     geno.compress=NULL, info.compress=NULL, format.compress=NULL,
     index.compress=NULL, ...)
 {
