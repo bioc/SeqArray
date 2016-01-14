@@ -162,7 +162,15 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
     {
         if (is.null(name2)) name2 <- name
         if (show)
-            cat("Exporting \"", name2, "\" ...\n", sep="")
+        {
+            if (name %in% c("sample.id", "variant.id"))
+            {
+                ss <- .seldim(gdsfile)
+                n <- ifelse(name=="sample.id", ss[1L], ss[2L])
+                cat("Exporting '", name2, "' (", .pretty(n), ")\n", sep="")
+            } else
+                cat("Exporting '", name2, "'\n", sep="")
+        }
         src <- index.gdsn(gdsfile, name2)
         dst <- add.gdsn(folder, name, storage=src)
         put.attr.gdsn(dst, val=src)
@@ -181,7 +189,7 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
     cp2 <- function(folder, samp.sel, var.sel, name, show=verbose)
     {
         if (show)
-            cat("Exporting \"", name, "\" ...\n", sep="")
+            cat("Exporting '", name, "'\n", sep="")
 
         dat1 <- index.gdsn(gdsfile, paste(name, "data", sep="/"))
         dat2 <- index.gdsn(gdsfile, paste(name, "~data", sep="/"), silent=TRUE)
@@ -222,27 +230,28 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
     cp.info <- function(folder, sel, name, name2, show=verbose)
     {
         if (show)
-            cat("Exporting \"", name2, "\" ...\n", sep="")
+            cat("Exporting '", name2, "'\n", sep="")
         src <- index.gdsn(gdsfile, name2)
         idx <- index.gdsn(gdsfile, .var_path(name2, "@"), silent=TRUE)
 
         dst <- add.gdsn(folder, name, storage=src)
         put.attr.gdsn(dst, val=src)
-        if (!is.null(idx))
+
+        if (is.null(idx))
         {
+            dm <- objdesp.gdsn(src)$dim
+            ss <- vector("list", length(dm))
+            ss[[length(dm)]] <- sel
+            assign.gdsn(dst, src, append=FALSE, seldim=ss)
+        } else {
             dstidx <- add.gdsn(folder, paste("@", name, sep=""), storage=idx)
             put.attr.gdsn(dstidx, val=idx)
-        }
-
-        dm <- objdesp.gdsn(src)$dim
-        ss <- vector("list", length(dm))
-        ss[[length(dm)]] <- sel
-        for (i in seq_len(length(dm)-1L))
-            ss[[i]] <- rep(TRUE, dm[i])
-        assign.gdsn(dst, src, append=FALSE, seldim=ss)
-
-        if (!is.null(idx))
+            dm <- objdesp.gdsn(src)$dim
+            ss <- vector("list", length(dm))
+            ss[[length(dm)]] <- .Call(SEQ_SelectFlag, sel, read.gdsn(idx))
+            assign.gdsn(dst, src, append=FALSE, seldim=ss)
             assign.gdsn(dstidx, idx, append=FALSE, seldim=sel)
+        }
     }
 
     #######################################################################
@@ -275,7 +284,7 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
         copyto.gdsn(node, index.gdsn(gdsfile, "genotype/extra.index"))
         copyto.gdsn(node, index.gdsn(gdsfile, "genotype/extra"))
     } else  # TODO
-        stop("Not implemented in \"genotype/extra.index\".")
+        stop("Not implemented in 'genotype/extra.index'.")
 
     ## annotation
     node <- addfolder.gdsn(outfile, "annotation")
@@ -294,6 +303,13 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
                     val=index.gdsn(gdsfile, "annotation/info"))
             }
             lst.info <- ls.gdsn(index.gdsn(gdsfile, "annotation/info"))
+            if (!is.null(info.var))
+            {
+                s <- setdiff(info.var, lst.info)
+                if (length(s) > 0L)
+                    warning("No INFO variable: ", paste(s, collapse=","))
+                lst.info <- intersect(lst.info, info.var)
+            }
             for (nm2 in lst.info)
             {
                 cp.info(node.info, S$variant.sel, nm2,
@@ -308,6 +324,13 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
                     val=index.gdsn(gdsfile, "annotation/format"))
             }
             lst.fmt <- ls.gdsn(index.gdsn(gdsfile, "annotation/format"))
+            if (!is.null(fmt.var))
+            {
+                s <- setdiff(fmt.var, lst.fmt)
+                if (length(s) > 0L)
+                    warning("No FORMAT variable: ", paste(s, collapse=","))
+                lst.fmt <- intersect(lst.fmt, fmt.var)
+            }
             for (nm2 in lst.fmt)
             {
                 s <- paste("annotation", "format", nm2, sep="/")
@@ -327,6 +350,13 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
     {
         put.attr.gdsn(node, val=n2)
         lst <- ls.gdsn(n2)
+        if (!is.null(samp.var))
+        {
+            s <- setdiff(samp.var, lst)
+            if (length(s) > 0L)
+                warning("No sample variable: ", paste(s, collapse=","))
+            lst <- intersect(lst, samp.var)
+        }
         for (nm in lst)
             cp(node, S$sample.sel, nm, paste("sample.annotation", nm, sep="/"))
     }
@@ -409,10 +439,7 @@ seqMerge <- function(gds.fn, out.fn,
     }
 
     # variants
-    variant <- function(f) {
-        paste(seqGetData(f, "chromosome"), seqGetData(f, "position"), sep="-")
-    }
-    variant.id <- variant2.id <- variant(flist[[1L]])
+    variant.id <- variant2.id <- seqGetData(flist[[1L]], "chrom-pos")
     if (verbose)
     {
         cat(sprintf("    [%-2d] %s (%s variant%s)\n", 1L, basename(gds.fn[1L]),
@@ -420,14 +447,21 @@ seqMerge <- function(gds.fn, out.fn,
     }
     for (i in seq_along(flist)[-1L])
     {
-        s <- variant(flist[[i]])
+        s <- seqGetData(flist[[i]], "chrom-pos")
         if (verbose)
         {
             cat(sprintf("    [%-2d] %s (%s variant%s)\n", i,
                 basename(gds.fn[i]), .pretty(length(s)), .plural(length(s))))
         }
-        variant.id <- unique(c(variant.id, s))
+
+        # variant id maybe not unique
+        s1 <- intersect(variant.id, s)
+        if (length(s1) <= 0L)
+            variant.id <- c(variant.id, s)
+        else
+            variant.id <- c(variant.id, setdiff(s, s1))
         variant2.id <- intersect(variant2.id, s)
+        remove(s, s1)
     }
 
     if (verbose)
@@ -528,16 +562,22 @@ seqMerge <- function(gds.fn, out.fn,
         n <- .AddVar(storage.option, gfile, "position", storage="int32")
         .append_gds(n, flist, "position")
         .DigestCode(n, digest, verbose)
+        if (length(variant.id) != objdesp.gdsn(n)$dim)
+            stop("Invalid number of variants in 'position'.")
 
         if (verbose) cat("    chromosome")
         n <- .AddVar(storage.option, gfile, "chromosome", storage="string")
         .append_gds(n, flist, "chromosome")
         .DigestCode(n, digest, verbose)
+        if (length(variant.id) != objdesp.gdsn(n)$dim)
+            stop("Invalid number of variants in 'chromosome'.")
 
         if (verbose) cat("    allele")
         n <- .AddVar(storage.option, gfile, "allele", storage="string")
         .append_gds(n, flist, "allele")
         .DigestCode(n, digest, verbose)
+        if (length(variant.id) != objdesp.gdsn(n)$dim)
+            stop("Invalid number of variants in 'allele'.")
 
 
         ## add a folder for genotypes
