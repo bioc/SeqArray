@@ -260,6 +260,9 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
     outfile <- createfn.gds(out.fn)
     on.exit({ closefn.gds(outfile) })
 
+    if (verbose)
+        cat("Export to '", out.fn, "'\n", sep="")
+
     # copy folders and attributes
     put.attr.gdsn(outfile$root, val=gdsfile$root)
     copyto.gdsn(outfile, index.gdsn(gdsfile, "description"))
@@ -273,6 +276,7 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
     cp(outfile, S$variant.sel, "position")
     cp(outfile, S$variant.sel, "chromosome")
     cp(outfile, S$variant.sel, "allele")
+    sync.gds(outfile)
 
     ## genotype
     node <- addfolder.gdsn(outfile, "genotype")
@@ -285,6 +289,8 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
         copyto.gdsn(node, index.gdsn(gdsfile, "genotype/extra"))
     } else  # TODO
         stop("Not implemented in 'genotype/extra.index'.")
+
+    sync.gds(outfile)
 
     ## annotation
     node <- addfolder.gdsn(outfile, "annotation")
@@ -342,6 +348,8 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
             cp(node, S$variant.sel, nm, paste("annotation", nm, sep="/"))
         }
     }
+
+    sync.gds(outfile)
 
     ## sample.annotation
     node <- addfolder.gdsn(outfile, "sample.annotation")
