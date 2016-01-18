@@ -184,6 +184,7 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
             sel <- ss
         }
         assign.gdsn(dst, src, append=FALSE, seldim=sel)
+        readmode.gdsn(dst)
     }
 
     cp2 <- function(folder, samp.sel, var.sel, name, show=verbose)
@@ -216,15 +217,18 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
         sel[[length(dm)]] <- flag
         sel[[length(dm)-1L]] <- samp.sel
         assign.gdsn(dst1, dat1, append=FALSE, seldim=sel)
+        readmode.gdsn(dst1)
 
         if (!is.null(dat2))
         {
             sel[[length(dm)]] <- samp.sel
             sel[[length(dm)-1L]] <- flag
             assign.gdsn(dst2, dat2, append=FALSE, seldim=sel)
+            readmode.gdsn(dst2)
         }
 
         assign.gdsn(dstidx, idx, append=FALSE, seldim=var.sel)
+        readmode.gdsn(dstidx)
     }
 
     cp.info <- function(folder, sel, name, name2, show=verbose)
@@ -243,6 +247,7 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
             ss <- vector("list", length(dm))
             ss[[length(dm)]] <- sel
             assign.gdsn(dst, src, append=FALSE, seldim=ss)
+            readmode.gdsn(dst)
         } else {
             dstidx <- add.gdsn(folder, paste("@", name, sep=""), storage=idx)
             put.attr.gdsn(dstidx, val=idx)
@@ -250,7 +255,9 @@ seqExport <- function(gdsfile, out.fn, info.var=NULL, fmt.var=NULL,
             ss <- vector("list", length(dm))
             ss[[length(dm)]] <- .Call(SEQ_SelectFlag, sel, read.gdsn(idx))
             assign.gdsn(dst, src, append=FALSE, seldim=ss)
+            readmode.gdsn(dst)
             assign.gdsn(dstidx, idx, append=FALSE, seldim=sel)
+            readmode.gdsn(dstidx)
         }
     }
 
@@ -400,8 +407,8 @@ seqMerge <- function(gds.fn, out.fn,
 {
     # check
     stopifnot(is.character(gds.fn))
-    if (length(gds.fn) <= 1L)
-        stop("'gds.fn' should have more than one files.")
+    if (length(gds.fn) < 1L)
+        stop("'gds.fn' should have at least one file.")
     stopifnot(is.character(out.fn), length(out.fn)==1L)
 
     stopifnot(is.null(info.var) | is.character(info.var))
