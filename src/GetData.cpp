@@ -2,7 +2,7 @@
 //
 // GetData.cpp: Get data from the GDS file
 //
-// Copyright (C) 2015    Xiuwen Zheng
+// Copyright (C) 2015-2016    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -269,7 +269,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_GetData(SEXP gdsfile, SEXP var_name)
 					&Sel.Variant[0], Sel.Sample.size(), &Sel.Sample[0], false);
 
 				// the number of calling PROTECT
-				int SIZE = NodeVar.Num_Sample * NodeVar.DLen[2];
+				size_t SIZE = (size_t)NodeVar.Num_Sample * NodeVar.DLen[2];
 				PROTECT(rv_ans = NEW_INTEGER(nVariant * SIZE));
 				PROTECT(tmp = NEW_INTEGER(3));
 					INTEGER(tmp)[0] = NodeVar.DLen[2];
@@ -493,7 +493,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_GetData(SEXP gdsfile, SEXP var_name)
 			memset(DStart, 0, sizeof(DStart));
 			rv_ans = GDS_R_Array_Read(N, DStart, DLen, &SelPtr[0], 0);
 
-		} else if (strcmp(s, "chrom-pos") == 0)
+		} else if (strcmp(s, "chrom_pos") == 0)
 		{
 			// ===========================================================
 			// chromosome-position
@@ -533,11 +533,11 @@ COREARRAY_DLL_EXPORT SEXP SEQ_GetData(SEXP gdsfile, SEXP var_name)
 			rv_ans = PROTECT(NEW_CHARACTER(n1));
 			for (size_t i=0; i < (size_t)n1; i++)
 			{
-				snprintf(p1, sizeof(buf1), "%s-%d", chr[i].c_str(), pos[i]);
+				snprintf(p1, sizeof(buf1), "%s_%d", chr[i].c_str(), pos[i]);
 				if (strcmp(p1, p2) == 0)
 				{
 					dup ++;
-					snprintf(p1, sizeof(buf1), "%s-%d.%d", chr[i].c_str(),
+					snprintf(p1, sizeof(buf1), "%s_%d_%d", chr[i].c_str(),
 						pos[i], dup);
 					SET_STRING_ELT(rv_ans, i, mkChar(p1));
 				} else {

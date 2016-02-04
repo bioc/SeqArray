@@ -1,78 +1,54 @@
+library(SeqArray)
+library(RUnit)
 
-.create_valid_data <- function()
+
+.popcnt <- function(x)
 {
-	# open the GDS file
-	gds.fn <- seqExampleFileName("gds")
-	f <- seqOpen(gds.fn)
-
-	set.seed(1000)
-	samp.id <- seqGetData(f, "sample.id")
-	variant.id <- seqGetData(f, "variant.id")
-
-	# get results
-	fcAlleleFreq <- list(
-		d1=seqAlleleFreq(f, NULL),
-		d2=seqAlleleFreq(f, 0L),
-		d3=seqAlleleFreq(f, sample(c(0L,1L), length(variant.id), replace=TRUE)),
-		d4=seqAlleleFreq(f, toupper(seqGetData(f, "annotation/info/AA")$data))
-	)
-
-	# validation data
-	Valid <- list(
-		fcAlleleFreq = fcAlleleFreq
-	)
-	save(Valid, file="Valid.RData", compress="xz")
-
-	# close the GDS file
-	seqClose(f)
+	ans <- 0L
+	while(x > 0)
+	{
+		if (x %% 2) ans <- ans + 1L
+		x <- x %/% 2
+	}
+	ans
 }
 
 
-# load the validation data
-Valid <- get(load(system.file("unitTests", "data", "Valid.RData",
-	package="SeqArray", mustWork=TRUE)))
-
-
-test_allele_freq <- function()
+test_popcnt <- function()
 {
-	num.cores <- 2L
+	set.seed(1000)
+	v1 <- sample.int(2147483647L, 10000L, replace=TRUE)
+	v2 <- sample.int(2147483647L, 10000L, replace=TRUE)
 
-	# open the GDS file
-	gds.fn <- seqExampleFileName("gds")
-	f <- seqOpen(gds.fn)
+	c1 <- sapply(v1, .popcnt)
+	c2 <- sapply(v2, .popcnt)
 
-	samp.id <- seqGetData(f, "sample.id")
-	variant.id <- seqGetData(f, "variant.id")
+	t1 <- SeqArray:::.cfunction("test_array_popcnt32")(v1)
+	t2 <- SeqArray:::.cfunction("test_array_popcnt32")(v2)
+	t3 <- SeqArray:::.cfunction2("test_array_popcnt64")(v1, v2)
 
-	# get results
-	for (p in 1L:num.cores)
+	checkEquals(c1, t1, "popcount u32")
+	checkEquals(c2, t2, "popcount u32")
+	checkEquals(c1+c2, t3, "popcount u64")
+
+	invisible()
+}
+
+
+test_byte_count <- function()
+{
+	set.seed(1000)
+	for (st in sample.int(1000L, 100L))
 	{
-		d <- seqAlleleFreq(f, NULL, parallel=p)
-		checkEquals(Valid$fcAlleleFreq$d1, d, paste0("seqAlleleFreq 1:", p))
+		n <- 50000L + sample.int(64L, 1) - 1L
+		v <- sample.int(255L, n, replace=TRUE)
+		v[sample.int(n, 25000L)] <- 0L
+		v <- as.raw(v)
+
+		n1 <- SeqArray:::.cfunction2("test_byte_count")(v, st)
+		n2 <- sum(v[st:length(v)] != 0L)
+		checkEquals(n1, n2, paste("byte_count (start=", st, ")", sep=""))
 	}
 
-	for (p in 1L:num.cores)
-	{
-		d <- seqAlleleFreq(f, 0L, parallel=p)
-		checkEquals(Valid$fcAlleleFreq$d2, d, paste0("seqAlleleFreq 2:", p))
-	}
-
-	for (p in 1L:num.cores)
-	{
-		set.seed(1000)
-		d <- seqAlleleFreq(f, sample(c(0L,1L), length(variant.id),
-			replace=TRUE), parallel=p)
-		checkEquals(Valid$fcAlleleFreq$d3, d, paste0("seqAlleleFreq 3:", p))
-	}
-
-	for (p in 1L:num.cores)
-	{
-		d <- seqAlleleFreq(f, toupper(seqGetData(f, "annotation/info/AA")$data),
-			parallel=p)
-		checkEquals(Valid$fcAlleleFreq$d4, d, paste0("seqAlleleFreq 4:", p))
-	}
-
-	# close the GDS file
-	seqClose(f)
 	invisible()
 }

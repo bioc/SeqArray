@@ -2,7 +2,7 @@
 //
 // SeqArray.cpp: the C/C++ codes for the SeqArray package
 //
-// Copyright (C) 2013-2015    Xiuwen Zheng
+// Copyright (C) 2013-2016    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -42,13 +42,30 @@ TInitObject::TInitObject(): GENO_BUFFER(1024)
 	memset(TRUE_ARRAY, TRUE, sizeof(TRUE_ARRAY));
 }
 
-TInitObject::TSelection &TInitObject::Selection(SEXP gds)
+TInitObject::TSelection &TInitObject::Selection(SEXP gdsfile, bool alloc)
 {
 	// TODO: check whether handle is valid
-	int id = INTEGER(GetListElement(gds, "id"))[0];
+	int id = INTEGER(GetListElement(gdsfile, "id"))[0];
 	TSelList &m = _Map[id];
 	if (m.empty()) m.push_back(TSelection());
-	return m.back();
+	TSelection &s = m.back();
+	if (alloc && (s.Sample.empty() | s.Variant.empty()))
+	{
+		// the GDS root node
+		PdGDSFolder Root = GDS_R_SEXP2FileRoot(gdsfile);
+		// selection
+		if (s.Sample.empty())
+		{
+			PdAbstractArray N = GDS_Node_Path(Root, "sample.id", TRUE);
+			s.Sample.resize(GDS_Array_GetTotalCount(N), TRUE);
+		}
+		if (s.Variant.empty())
+		{
+			PdAbstractArray N = GDS_Node_Path(Root, "variant.id", TRUE);
+			s.Variant.resize(GDS_Array_GetTotalCount(N), TRUE);
+		}
+	}
+	return s;
 }
 
 void TInitObject::Need_GenoBuffer(size_t size)
@@ -120,14 +137,6 @@ COREARRAY_DLL_LOCAL int GetGDSObjCount(PdAbstractArray Obj, const char *varname)
 	return GDS_Array_GetTotalCount(Obj);
 }
 
-/// Get the number of TRUEs
-COREARRAY_DLL_LOCAL size_t GetNumOfTRUE(C_BOOL *array, size_t n)
-{
-	size_t ans = 0;
-	for (; n > 0; n--) if (*array++) ans ++;
-	return ans;
-}
-
 /// Get the number of alleles
 COREARRAY_DLL_LOCAL int GetNumOfAllele(const char *allele_list)
 {
@@ -156,13 +165,15 @@ COREARRAY_DLL_LOCAL int GetNumOfAllele(const char *allele_list)
 /// Get the index in an allele list
 COREARRAY_DLL_LOCAL int GetIndexOfAllele(const char *allele, const char *allele_list)
 {
-	int idx = 0;
+	const size_t len = strlen(allele);
 	const char *st = allele_list;
+	int idx = 0;
 	while (*allele_list)
 	{
 		while ((*allele_list != ',') && (*allele_list != 0))
 			allele_list ++;
-		if (strncmp(allele, st, allele_list - st) == 0)
+		size_t n = allele_list - st;
+		if ((len==n) && (strncmp(allele, st, n)==0))
 			return idx;
 		if (*allele_list == ',')
 		{
@@ -172,6 +183,24 @@ COREARRAY_DLL_LOCAL int GetIndexOfAllele(const char *allele, const char *allele_
 		}
 	}
 	return -1;
+}
+
+/// Get strings split by comma
+COREARRAY_DLL_LOCAL void GetAlleles(const char *alleles, vector<string> &out)
+{
+	out.clear();
+	const char *p, *s;
+	p = s = alleles;
+	do {
+		if ((*p == 0) || (*p == ','))
+		{
+			out.push_back(string(s, p));
+			if (*p == ',') p ++;
+			s = p;
+			if (*p == 0) break;
+		}
+		p ++;
+	} while (1);
 }
 
 
@@ -1142,6 +1171,12 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 	extern SEXP SEQ_ConvBEDFlag(SEXP, SEXP, SEXP);
 	extern SEXP SEQ_ConvBED2GDS(SEXP, SEXP, SEXP, SEXP, SEXP);
 
+	extern SEXP SEQ_MergeAllele(SEXP, SEXP, SEXP, SEXP);
+	extern SEXP SEQ_MergeGeno(SEXP, SEXP, SEXP, SEXP, SEXP);
+	extern SEXP SEQ_MergePhase(SEXP, SEXP, SEXP, SEXP, SEXP);
+	extern SEXP SEQ_MergeInfo(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+	extern SEXP SEQ_MergeFormat(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+
 	static R_CallMethodDef callMethods[] =
 	{
 		CALL(SEQ_ExternalName0, 0),         CALL(SEQ_ExternalName1, 1),
@@ -1151,6 +1186,11 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 		CALL(SEQ_File_Init, 1),             CALL(SEQ_File_Done, 1),
 		CALL(SEQ_FilterPushEmpty, 1),       CALL(SEQ_FilterPushLast, 1),
 		CALL(SEQ_FilterPop, 1),
+
+		CALL(SEQ_MergeAllele, 4),           CALL(SEQ_MergeGeno, 5),
+		CALL(SEQ_MergePhase, 5),            CALL(SEQ_MergeInfo, 6),
+		CALL(SEQ_MergeFormat, 6),
+
 		CALL(SEQ_SetSpaceSample, 4),        CALL(SEQ_SetSpaceSample2, 4),
 		CALL(SEQ_SetSpaceVariant, 4),       CALL(SEQ_SetSpaceVariant2, 4),
 		CALL(SEQ_SplitSelection, 5),        CALL(SEQ_SetChrom, 4),

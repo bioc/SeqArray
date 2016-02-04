@@ -400,7 +400,7 @@
 
 #######################################################################
 # Add a variable with corresponding compression mode
-# See: seqStorage.Option
+# See: seqStorageOption
 #
 .AddVar <- function(storage.option, node, varname, val=NULL,
     storage=storage.mode(val), valdim=NULL, closezip=FALSE, visible=TRUE)
@@ -424,7 +424,7 @@
     } else {
         if (path == "genotype")
             varname2 <- "genotype"
-        else if (fmt_flag)
+        else if (fmt_flag & !idx_flag)
             varname2 <- path
     }
 
@@ -480,12 +480,42 @@
             storage.param <- s[2L]
     }
 
+    nm <- names(storage.option$mode)
+    if (!is.null(nm))
+    {
+        i <- match(fullvarname, nm)
+        j <- match(varname2, nm)
+        if (is.na(i)) i <- j
+        if (!is.na(i))
+        {
+            stm <- storage.option$mode[i]
+            s <- unlist(strsplit(stm, ":", fixed=TRUE))
+            if (length(s) > 2L)
+                stop("Invalid 'storage.option$mode'.")
+            storage <- s[1L]
+            if (length(s) == 2L)
+                storage.param <- s[2L]
+            else
+                storage.param <- ""
+        }
+    }
+
     # add.gdsn arguments
     args <- list(node=node, name=varname, val=val, storage=storage,
         valdim=valdim, compress=compress.flag, closezip=closezip,
         visible=visible)
     args <- c(args, eval(parse(text=paste("list(", storage.param, ")"))))
     do.call(add.gdsn, args)
+}
+
+
+
+#######################################################################
+# GDS node variable type
+#
+.DetectVarType <- function(srcfiles, varname)
+{
+    
 }
 
 
@@ -514,11 +544,11 @@
     ans
 }
 
-.MergeNodeAttr <- function(target.node, srcfile, varname)
+.MergeNodeAttr <- function(target.node, srcfiles, varname)
 {
-    v <- vector("list", length(srcfile))
-    for (i in seq_along(srcfile))
-        v[[i]] <- get.attr.gdsn(index.gdsn(srcfile[[i]], varname))
+    v <- vector("list", length(srcfiles))
+    for (i in seq_along(srcfiles))
+        v[[i]] <- get.attr.gdsn(index.gdsn(srcfiles[[i]], varname))
     v <- .MergeAttr(v)
     if (!is.null(v))
     {
