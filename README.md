@@ -24,7 +24,7 @@ Release Version: v1.10.6
 * [Help Documents](http://zhengxwen.github.io/SeqArray/release/help/00Index.html)
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [Data Analytics](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/AnalysisTutorial.html)
 
-Development Version: v1.11.10
+Development Version: v1.11.11
 
 [http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html)
 
@@ -85,7 +85,7 @@ seqClose(f)
 
 ```R
 ## Object of class "SeqVarGDSClass"
-## File: SeqArray/extdata/CEU_Exon.gds (396.3 KB)
+## File: SeqArray/extdata/CEU_Exon.gds (387.3K)
 ## +    [  ] *
 ## |--+ description   [  ] *
 ## |--+ sample.id   { VStr8 90 ZIP_RA(30.83%), 222B }
