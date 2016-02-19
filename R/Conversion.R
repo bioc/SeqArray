@@ -17,7 +17,7 @@
 # http://www.1000genomes.org/wiki/analysis/variant-call-format
 #
 
-seqVCF.Header <- function(vcf.fn, getnum=FALSE)
+seqVCF_Header <- function(vcf.fn, getnum=FALSE)
 {
     # check
     stopifnot(is.character(vcf.fn))
@@ -349,7 +349,7 @@ seqVCF.Header <- function(vcf.fn, getnum=FALSE)
 # get sample id from a VCF file
 #
 
-seqVCF.SampID <- function(vcf.fn)
+seqVCF_SampID <- function(vcf.fn)
 {
     # check
     stopifnot(is.character(vcf.fn))
@@ -424,11 +424,11 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     {
         if (is.null(samp.id))
         {
-            samp.id <- seqVCF.SampID(vcf.fn[i])
+            samp.id <- seqVCF_SampID(vcf.fn[i])
             if (length(samp.id) <= 0L)
                 stop("There is no sample in the VCF file.")
         } else {
-            tmp <- seqVCF.SampID(vcf.fn[i])
+            tmp <- seqVCF_SampID(vcf.fn[i])
             if (length(samp.id) != length(tmp))
             {
                 stop(sprintf("The file '%s' has different sample id.",
@@ -447,10 +447,10 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     # parse the header of VCF
 
     if (is.null(header))
-        header <- seqVCF.Header(vcf.fn)
+        header <- seqVCF_Header(vcf.fn)
     if (!inherits(header, "SeqVCFHeaderClass"))
-        stop("'header' should be NULL or returned from 'seqVCF.Header()'.")
-    # 'seqVCF.Header'
+        stop("'header' should be NULL or returned from 'seqVCF_Header()'.")
+    # 'seqVCF_Header'
     # returns list(fileformat=fileformat, info=INFO, filter=FILTER,
     #              format=FORMAT, alt=ALT, contig=contig, assembly=assembly,
     #              reference, header, ploidy)
@@ -1113,8 +1113,8 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
     ######################################################
     # write the header -- samples
 
-    cat(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT",
-        seqGetData(gdsfile, "sample.id")), sep="\t", file=ofile)
+    cat(c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO",
+        "FORMAT", seqGetData(gdsfile, "sample.id")), sep="\t", file=ofile)
     cat("\n", file=ofile)
 
 
@@ -1125,12 +1125,12 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
     if (!is.null(z$info$ID))
         nm.info <- paste("annotation/info/", z$info$ID, sep="")
     else
-        nm.info <- c()
+        nm.info <- character()
     # the FORMAT field
     if (!is.null(z$format$ID))
         nm.format <- paste("annotation/format/", z$format$ID, sep="")
     else
-        nm.format <- c()
+        nm.format <- character()
 
     # initialize the variable length of INFO
     len.info <- NULL
