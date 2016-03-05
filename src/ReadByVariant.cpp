@@ -238,11 +238,7 @@ void CVarApplyByVariant::ReadGenoData(int *Base)
 	}
 
 	// CellCount = Num_Sample * DLen[2] in 'NeedRData'
-	for (size_t n=CellCount; n > 0; n--)
-	{
-		if (*Base == missing) *Base = NA_INTEGER;
-		Base ++;
-	}	
+	vec_i32_replace(Base, CellCount, missing, NA_INTEGER);
 }
 
 void CVarApplyByVariant::ReadGenoData(C_UInt8 *Base)
@@ -624,12 +620,10 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Apply_Variant(SEXP gdsfile, SEXP var_name,
 		do {
 			switch (VarIdx)
 			{
-				case 2:
-					INTEGER(R_Index)[0] = ans_index + 1;
-					break;
-				case 3:
-					INTEGER(R_Index)[0] = NodeList.begin()->CurIndex + 1;
-					break;
+			case 2:
+				INTEGER(R_Index)[0] = ans_index + 1; break;
+			case 3:
+				INTEGER(R_Index)[0] = NodeList.begin()->CurIndex + 1; break;
 			}
 
 			if (NodeList.size() <= 1)

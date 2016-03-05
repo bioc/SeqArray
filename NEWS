@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.11.0-1.11.13
+CHANGES IN VERSION 1.11.0-1.11.14
 -------------------------
 
     o rewrite `seqSummary()`
@@ -19,6 +19,10 @@ CHANGES IN VERSION 1.11.0-1.11.13
 
     o seqSetFilter(): 'samp.sel' is deprecated since v1.11.12, please use
       'sample.sel' instead
+
+    o accelerate reading genotypes with SSE2(+13%) and AVX2(+23%)
+
+    o new function `seqSystem()`
 
 
 CHANGES IN VERSION 1.10.0-1.10.6
