@@ -36,7 +36,35 @@
 // The Initialized Object
 // ===========================================================
 
-/// the initial data
+void TInitObject::TSelection::Reset()
+{
+	PdGDSFolder Root = FileInfo->Root;
+
+	if (Sample.empty())
+	{
+		PdAbstractArray N = GDS_Node_Path(Root, "sample.id", TRUE);
+		C_Int64 n = GDS_Array_GetTotalCount(N);
+		if ((n < 0) || (n > 2147483647))
+			throw ErrSeqArray("Invalid dimension of 'sample.id'.");
+		Sample.resize(n, TRUE);
+	}
+	if (Variant.empty())
+	{
+		PdAbstractArray N = GDS_Node_Path(Root, "variant.id", TRUE);
+		C_Int64 n = GDS_Array_GetTotalCount(N);
+		if ((n < 0) || (n > 2147483647))
+			throw ErrSeqArray("Invalid dimension of 'variant.id'.");
+		Variant.resize(n, TRUE);
+	}
+}
+
+void TInitObject::TFileInfo::NeedChrom()
+{
+	if (Chrom.Map.empty())
+		Chrom.AddChrom(Root);
+}
+
+
 TInitObject::TInitObject(): GENO_BUFFER(1024)
 {
 	memset(TRUE_ARRAY, TRUE, sizeof(TRUE_ARRAY));
@@ -44,27 +72,21 @@ TInitObject::TInitObject(): GENO_BUFFER(1024)
 
 TInitObject::TSelection &TInitObject::Selection(SEXP gdsfile, bool alloc)
 {
-	// TODO: check whether handle is valid
-	int id = INTEGER(GetListElement(gdsfile, "id"))[0];
-	TSelList &m = _Map[id];
-	if (m.empty()) m.push_back(TSelection());
-	TSelection &s = m.back();
+	SEXP ID = GetListElement(gdsfile, "id");
+	if (Rf_isNull(ID))
+		throw ErrSeqArray("Invalid gds object.");
+
+	int id = Rf_asInteger(ID);
+	TFileInfo &info = _Map[id];
+	info.Root = GDS_R_SEXP2FileRoot(gdsfile);
+
+	if (info.SelList.empty())
+		info.SelList.push_back(TSelection(info));
+
+	TSelection &s = info.SelList.back();
 	if (alloc && (s.Sample.empty() | s.Variant.empty()))
-	{
-		// the GDS root node
-		PdGDSFolder Root = GDS_R_SEXP2FileRoot(gdsfile);
-		// selection
-		if (s.Sample.empty())
-		{
-			PdAbstractArray N = GDS_Node_Path(Root, "sample.id", TRUE);
-			s.Sample.resize(GDS_Array_GetTotalCount(N), TRUE);
-		}
-		if (s.Variant.empty())
-		{
-			PdAbstractArray N = GDS_Node_Path(Root, "variant.id", TRUE);
-			s.Variant.resize(GDS_Array_GetTotalCount(N), TRUE);
-		}
-	}
+		s.Reset();
+
 	return s;
 }
 
@@ -117,7 +139,7 @@ COREARRAY_DLL_LOCAL SEXP GetListElement(SEXP list, const char *str)
 {
 	SEXP elmt = R_NilValue;
 	SEXP names = getAttrib(list, R_NamesSymbol);
-	const size_t n = GetLength(names);
+	const size_t n = RLength(names);
 	for (size_t i = 0; i < n; i++)
 	{
 		if (strcmp(CHAR(STRING_ELT(names, i)), str) == 0)
@@ -224,9 +246,8 @@ COREARRAY_DLL_EXPORT SEXP SEQ_File_Init(SEXP gdsfile)
 COREARRAY_DLL_EXPORT SEXP SEQ_File_Done(SEXP gdsfile)
 {
 	COREARRAY_TRY
-		int gds_file_id = Rf_asInteger(GetListElement(gdsfile, "id"));
-		map<int, TInitObject::TSelList>::iterator it =
-			Init._Map.find(gds_file_id);
+		int id = Rf_asInteger(GetListElement(gdsfile, "id"));
+		map<int, TInitObject::TFileInfo>::iterator it = Init._Map.find(id);
 		if (it != Init._Map.end())
 			Init._Map.erase(it);
 	COREARRAY_CATCH
@@ -243,11 +264,11 @@ COREARRAY_DLL_EXPORT SEXP SEQ_FilterPushEmpty(SEXP gdsfile)
 {
 	COREARRAY_TRY
 		int id = Rf_asInteger(GetListElement(gdsfile, "id"));
-		map<int, TInitObject::TSelList>::iterator it =
+		map<int, TInitObject::TFileInfo>::iterator it =
 			Init._Map.find(id);
 		if (it != Init._Map.end())
 		{
-			it->second.push_back(TInitObject::TSelection());
+			it->second.SelList.push_back(TInitObject::TSelection(it->second));
 		} else
 			throw ErrSeqArray("The GDS file is closed or invalid.");
 	COREARRAY_CATCH
@@ -259,14 +280,14 @@ COREARRAY_DLL_EXPORT SEXP SEQ_FilterPushLast(SEXP gdsfile)
 {
 	COREARRAY_TRY
 		int id = Rf_asInteger(GetListElement(gdsfile, "id"));
-		map<int, TInitObject::TSelList>::iterator it =
+		map<int, TInitObject::TFileInfo>::iterator it =
 			Init._Map.find(id);
 		if (it != Init._Map.end())
 		{
-			if (!it->second.empty())
-				it->second.push_back(it->second.back());
+			if (!it->second.SelList.empty())
+				it->second.SelList.push_back(it->second.SelList.back());
 			else
-				it->second.push_back(TInitObject::TSelection());
+				it->second.SelList.push_back(TInitObject::TSelection(it->second));
 		} else
 			throw ErrSeqArray("The GDS file is closed or invalid.");
 	COREARRAY_CATCH
@@ -278,13 +299,13 @@ COREARRAY_DLL_EXPORT SEXP SEQ_FilterPop(SEXP gdsfile)
 {
 	COREARRAY_TRY
 		int id = Rf_asInteger(GetListElement(gdsfile, "id"));
-		map<int, TInitObject::TSelList>::iterator it =
+		map<int, TInitObject::TFileInfo>::iterator it =
 			Init._Map.find(id);
 		if (it != Init._Map.end())
 		{
-			if (it->second.size() <= 1)
+			if (it->second.SelList.size() <= 1)
 				throw ErrSeqArray("No filter can be pop up.");
-			it->second.pop_back();
+			it->second.SelList.pop_back();
 		} else
 			throw ErrSeqArray("The GDS file is closed or invalid.");
 	COREARRAY_CATCH
@@ -744,62 +765,156 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceVariant2(SEXP gdsfile, SEXP var_sel,
 }
 
 
+static bool is_numeric(const string &txt)
+{
+	char *endptr = (char*)(txt.c_str());
+	strtol(txt.c_str(), &endptr, 10);
+	return (endptr != txt.c_str()) && (*endptr == 0);
+}
+
 /// set a working space flag with selected chromosome(s)
 COREARRAY_DLL_EXPORT SEXP SEQ_SetChrom(SEXP gdsfile, SEXP include,
-	SEXP is_num, SEXP verbose)
+	SEXP is_num, SEXP frombp, SEXP tobp, SEXP verbose)
 {
+	int nProtected = 0;
+	int *pFrom=NULL, *pTo=NULL;
+
 	int IsNum = Rf_asLogical(is_num);
-	if (!Rf_isNull(include))
-		include = AS_CHARACTER(include);
+
+	if (Rf_isNull(include))
+	{
+		if (!Rf_isNull(frombp))
+			error("'from.bp' should be NULL.");
+		if (!Rf_isNull(tobp))
+			error("'to.bp' should be NULL.");
+	} else {
+		include = PROTECT(AS_CHARACTER(include));
+		nProtected ++;
+		if (!Rf_isNull(frombp) || !Rf_isNull(tobp))
+		{
+			if (RLength(include) != RLength(frombp))
+				error("'from.bp' should have the same length as 'include'.");
+			if (RLength(include) != RLength(tobp))
+				error("'to.bp' should have the same length as 'include'.");
+			frombp = PROTECT(AS_INTEGER(frombp));
+			tobp = PROTECT(AS_INTEGER(tobp));
+			pFrom = INTEGER(frombp); pTo = INTEGER(tobp);
+			nProtected += 2;
+		}
+	}
 
 	COREARRAY_TRY
 
-		PdGDSFolder Root = GDS_R_SEXP2FileRoot(gdsfile);
-		PdAbstractArray varVariant = GDS_Node_Path(Root, "variant.id", TRUE);
-		int nVariant = GDS_Array_GetTotalCount(varVariant);
+		TInitObject::TSelection &Sel = Init.Selection(gdsfile, true);
+		Sel.FileInfo->NeedChrom();
 
-		PdAbstractArray varChrom = GDS_Node_Path(Root, "chromosome", TRUE);
-		if ((GDS_Array_DimCnt(varChrom) != 1) ||
-				(nVariant != GDS_Array_GetTotalCount(varChrom)))
-			throw ErrSeqArray("Invalid 'chromosome'.");
+		vector<C_BOOL> &array = Sel.Variant;
+		memset(&array[0], FALSE, array.size());
 
-		set<string> Inc;
-		bool IncFlag = (Rf_isNull(include) != TRUE);
-		if (IncFlag)
+		if (Rf_isNull(include))
 		{
-			R_xlen_t n = XLENGTH(include);
-			for (R_xlen_t i=0; i < n; i++)
-				Inc.insert(CHAR(STRING_ELT(include, i)));
-		}
-
-		vector<C_BOOL> &array = Init.Selection(gdsfile).Variant;
-		array.resize(nVariant);
-		string txt;
-		int nSum = 0;
-
-		for (C_Int32 i=0; i < nVariant; i++)
-		{
-			static const C_Int32 ONE = 1;
-			GDS_Array_ReadData(varChrom, &i, &ONE, &txt, svStrUTF8);
-
-			bool flag = true;
-			if (IsNum != NA_INTEGER)
+			// include = NULL
+			if (IsNum == NA_INTEGER)
 			{
-				// whether val is numeric
-				char *endptr = (char*)(txt.c_str());
-				strtol(txt.c_str(), &endptr, 10);
-				flag = (endptr != txt.c_str());
-				if (IsNum == FALSE) flag = !flag;
+				memset(&array[0], TRUE, array.size());
+			} else {
+				CChromIndex &Chrom = Sel.FileInfo->Chrom;
+				map<string, CChromIndex::TRangeList>::iterator it;
+				for (it=Chrom.Map.begin(); it != Chrom.Map.end(); it++)
+				{
+					bool flag = is_numeric(it->first);
+					if (((IsNum==TRUE) && flag) || ((IsNum==FALSE) && !flag))
+					{
+						CChromIndex::TRangeList &rng = it->second;
+						vector<CChromIndex::TRange>::iterator it;
+						for (it=rng.begin(); it != rng.end(); it++)
+						{
+							memset(&array[it->Start], TRUE, it->Length);
+						}
+					}
+				}
 			}
-			if (IncFlag && flag)
-				flag = (Inc.find(txt) != Inc.end());
 
-			array[i] = flag;
-			if (flag) nSum ++;
+		} else {
+			// include != NULL
+			PdAbstractArray varPos = NULL;
+			if (pFrom && pTo)
+				varPos = GDS_Node_Path(Sel.FileInfo->Root, "position", TRUE);
+
+			CChromIndex &Chrom = Sel.FileInfo->Chrom;
+			map<string, CRangeSet> RngSets;
+
+			R_xlen_t n = XLENGTH(include);
+			for (R_xlen_t idx=0; idx < n; idx++)
+			{
+				string s = CHAR(STRING_ELT(include, idx));
+
+				if (IsNum == TRUE)
+				{
+					if (!is_numeric(s)) continue;
+				} else if (IsNum == FALSE)
+				{
+					if (is_numeric(s)) continue;
+				}
+
+				map<string, CChromIndex::TRangeList>::iterator it =
+					Chrom.Map.find(s);
+				if (it != Chrom.Map.end())
+				{
+					if (varPos)
+					{
+						// if from.bp and to.bp
+						int from = pFrom[idx], to = pTo[idx];
+						if (from == NA_INTEGER) from = 0;
+						if (to == NA_INTEGER) to = 2147483647;
+						RngSets[s].AddRange(from, to);
+					} else {
+						// no from.bp and to.bp
+						CChromIndex::TRangeList &rng = it->second;
+						vector<CChromIndex::TRange>::iterator p;
+						for (p=rng.begin(); p != rng.end(); p++)
+						{
+							memset(&array[p->Start], TRUE, p->Length);
+						}
+					}
+				}
+			}
+
+			if (varPos)
+			{
+				vector<C_Int32> buf;
+				map<string, CRangeSet>::iterator it;
+				for (it=RngSets.begin(); it != RngSets.end(); it++)
+				{
+					CChromIndex::TRangeList &rng = Chrom.Map[it->first];
+					CRangeSet &RngSet = it->second;
+					vector<CChromIndex::TRange>::const_iterator p;
+					for (p=rng.begin(); p != rng.end(); p++)
+					{
+						C_Int32 st  = p->Start;
+						C_Int32 cnt = p->Length;
+						buf.resize(cnt);
+						GDS_Array_ReadData(varPos, &st, &cnt, &buf[0], svInt32);
+
+						size_t i = p->Start;
+						for (int *s=&buf[0]; cnt > 0; cnt--)
+						{
+							if (RngSet.IsIncluded(*s++))
+								array[i] = TRUE;
+							i ++;
+						}
+					}
+				}
+			}
 		}
 
 		if (Rf_asLogical(verbose) == TRUE)
-			Rprintf("# of selected variants: %d\n", nSum);
+		{
+			int n = GetNumOfTRUE(&array[0], array.size());
+			Rprintf("# of selected variants: %d\n", n);
+		}
+
+		UNPROTECT(nProtected);
 
 	COREARRAY_CATCH
 }
@@ -1151,31 +1266,35 @@ COREARRAY_DLL_EXPORT SEXP SEQ_System()
 
 		// compiler flags
 		vector<string> ss;
-	#ifdef COREARRAY_SIMD_SSE
+
+	#ifdef __SSE__
 		ss.push_back("SSE");
 	#endif
-	#ifdef COREARRAY_SIMD_SSE2
+	#ifdef __SSE2__
 		ss.push_back("SSE2");
 	#endif
-	#ifdef COREARRAY_SIMD_SSE3
+	#ifdef __SSE3__
 		ss.push_back("SSE3");
 	#endif
-	#ifdef COREARRAY_SIMD_SSE4_1
+	#ifdef __SSSE3__
+		ss.push_back("SSSE3");
+	#endif
+	#ifdef __SSE4_1__
 		ss.push_back("SSE4.1");
 	#endif
-	#ifdef COREARRAY_SIMD_SSE4_2
+	#ifdef __SSE4_2__
 		ss.push_back("SSE4.2");
 	#endif
-	#ifdef COREARRAY_SIMD_AVX
+	#ifdef __AVX__
 		ss.push_back("AVX");
 	#endif
-	#ifdef COREARRAY_SIMD_AVX2
+	#ifdef __AVX2__
 		ss.push_back("AVX2");
 	#endif
-	#ifdef COREARRAY_SIMD_FMA
+	#ifdef __FMA__
 		ss.push_back("FMA");
 	#endif
-	#ifdef COREARRAY_SIMD_FMA4
+	#ifdef __FMA4__
 		ss.push_back("FMA4");
 	#endif
 		SEXP SIMD = PROTECT(NEW_CHARACTER(ss.size()));
@@ -1254,12 +1373,12 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 
 		CALL(SEQ_SetSpaceSample, 4),        CALL(SEQ_SetSpaceSample2, 4),
 		CALL(SEQ_SetSpaceVariant, 4),       CALL(SEQ_SetSpaceVariant2, 4),
-		CALL(SEQ_SplitSelection, 5),        CALL(SEQ_SetChrom, 4),
+		CALL(SEQ_SplitSelection, 5),        CALL(SEQ_SetChrom, 6),
 		CALL(SEQ_GetSpace, 2),
 
 		CALL(SEQ_Summary, 2),               CALL(SEQ_System, 0),
 
-		CALL(SEQ_GetData, 2),
+		CALL(SEQ_GetData, 3),
 		CALL(SEQ_Apply_Sample, 7),          CALL(SEQ_Apply_Variant, 8),
 
 		CALL(SEQ_ConvBEDFlag, 3),           CALL(SEQ_ConvBED2GDS, 5),

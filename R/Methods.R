@@ -85,11 +85,14 @@ setMethod("seqClose", signature(object="SeqVarGDSClass"),
 #######################################################################
 # Set a working space with selected samples and variants
 #
-setMethod("seqSetFilter", signature(object="SeqVarGDSClass"),
-    function(object, sample.id=NULL, variant.id=NULL, samp.sel=NULL, sample.sel=NULL,
-        variant.sel=NULL, action=c("set", "intersect", "push", "push+set",
-        "push+intersect", "pop"), verbose=TRUE)
+setMethod("seqSetFilter", signature(object="SeqVarGDSClass", variant.sel="ANY"),
+    function(object, variant.sel, sample.sel=NULL, variant.id=NULL,
+        sample.id=NULL, samp.sel=NULL,
+        action=c("set", "intersect", "push", "push+set", "push+intersect",
+        "pop"), verbose=TRUE)
     {
+        if (missing(variant.sel)) variant.sel <- NULL
+
         # check
         action <- match.arg(action)
         stopifnot(is.logical(verbose))
@@ -168,6 +171,32 @@ setMethod("seqSetFilter", signature(object="SeqVarGDSClass"),
     }
 )
 
+setMethod("seqSetFilter", signature(object="SeqVarGDSClass",
+    variant.sel="GRanges"),
+    function(object, variant.sel, rm.txt="chr", verbose=TRUE)
+    {
+        z <- seqnames(variant.sel)
+        levels(z) <- sub(rm.txt, "", levels(z))
+
+        seqSetFilterChrom(object,
+            include = as.character(z),
+            from.bp = BiocGenerics::start(variant.sel),
+            to.bp   = BiocGenerics::end(variant.sel),
+            verbose = verbose)
+        invisible()
+    }
+)
+
+setMethod("seqSetFilter", signature(object="SeqVarGDSClass",
+    variant.sel="GRangesList"),
+    function(object, variant.sel, rm.txt="chr", verbose=TRUE)
+    {
+        seqSetFilter(object, unlist(variant.sel), rm.txt, verbose)
+        invisible()
+    }
+)
+
+
 
 
 #######################################################################
@@ -194,39 +223,19 @@ seqResetFilter <- function(object, sample=TRUE, variant=TRUE, verbose=TRUE)
 # Set a filter according to specified chromosomes
 #
 seqSetFilterChrom <- function(gdsfile, include=NULL, is.num=NA,
-    from.bp=NaN, to.bp=NaN, verbose=TRUE)
+    from.bp=NULL, to.bp=NULL, verbose=TRUE)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
     stopifnot(is.null(include) | is.numeric(include) | is.character(include))
     stopifnot(is.logical(is.num))
 
-    stopifnot(is.numeric(from.bp) & is.vector(from.bp))
-    stopifnot(length(from.bp) == 1L)
-    stopifnot(is.numeric(to.bp) & is.vector(to.bp))
-    stopifnot(length(to.bp) == 1L)
-
+    stopifnot(is.null(from.bp) | is.numeric(from.bp))
+    stopifnot(is.null(to.bp) | is.numeric(to.bp))
     stopifnot(is.logical(verbose), length(verbose)==1L)
 
-    if (is.finite(from.bp) | is.finite(to.bp))
-    {
-        # call C function
-        .Call(SEQ_SetChrom, gdsfile, include, is.num, FALSE)
-        pos <- seqGetData(gdsfile, "position")
-        if (is.finite(from.bp))
-        {
-            flag <- (pos >= from.bp)
-            if (is.finite(to.bp))
-                flag <- flag & (pos <= to.bp)
-        } else {
-            flag <- (pos <= to.bp)
-        }
-        seqSetFilter(gdsfile, action="intersect", variant.sel=flag,
-            verbose=verbose)
-    } else {
-        # call C function
-        .Call(SEQ_SetChrom, gdsfile, include, is.num, verbose)
-    }
+    # call C function
+    .Call(SEQ_SetChrom, gdsfile, include, is.num, from.bp, to.bp, verbose)
 
     invisible()
 }
@@ -262,13 +271,13 @@ seqGetFilter <- function(gdsfile, .useraw=FALSE)
 #######################################################################
 # Get data from a working space with selected samples and variants
 #
-seqGetData <- function(gdsfile, var.name)
+seqGetData <- function(gdsfile, var.name, .useraw=FALSE)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
     stopifnot(is.character(var.name), length(var.name)==1L)
 
-    .Call(SEQ_GetData, gdsfile, var.name)
+    .Call(SEQ_GetData, gdsfile, var.name, .useraw)
 }
 
 

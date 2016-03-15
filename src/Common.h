@@ -33,10 +33,13 @@
 
 #include <cctype>
 #include <cstring>
+
+#include "Index.h"
 #include "vectorization.h"
 
 using namespace std;
 using namespace CoreArray;
+using namespace SeqArray;
 
 
 #define LongBool int
@@ -52,15 +55,34 @@ using namespace CoreArray;
 class COREARRAY_DLL_LOCAL TInitObject
 {
 public:
+	struct TFileInfo;
+
 	struct TSelection
 	{
-		vector<C_BOOL> Sample;
-		vector<C_BOOL> Variant;
+		TFileInfo *FileInfo;
+		vector<C_BOOL> Sample;   ///< sample selection
+		vector<C_BOOL> Variant;  ///< variant selection
+
+		/// constructor
+		TSelection(TFileInfo &info) { FileInfo = &info; }
+		/// reset 'Sample' and 'Variant' to the actual numbers
+		void Reset();
 	};
 
-	typedef list<TSelection> TSelList;
+	struct TFileInfo
+	{
+		PdGDSFolder Root;  ///< the root of gds file
+		list<TSelection> SelList;  ///< a list of sample and variant selections
+		CChromIndex Chrom;  ///< chromosome indexing
 
+		/// check if Chrom is initialized
+		void NeedChrom();
+	};
+
+	/// constructor
 	TInitObject();
+
+	/// get the associated selection
 	TSelection &Selection(SEXP gds, bool alloc=false);
 
 	/// a vector of TRUE
@@ -71,7 +93,7 @@ public:
 	/// allocator buffer according to size at least
 	void Need_GenoBuffer(size_t size);
 
-	map<int, TSelList> _Map;
+	map<int, TFileInfo> _Map;
 };
 
 extern TInitObject Init;
@@ -91,6 +113,7 @@ public:
 		ctNone,
 		ctBasic,       ///< sample.id, variant.id, etc
 		ctGenotype,    ///< genotypes or alleles
+		ctDosage,      ///< dosage of reference or specified allele
 		ctPhase,       ///< phase information
 		ctInfo,        ///< variant annotation info field
 		ctFormat,      ///< variant annotation format field
@@ -109,23 +132,6 @@ public:
 
 private:
 	vector<C_BOOL> _TRUE;
-};
-
-
-
-// ===========================================================
-// Define Exception
-// ===========================================================
-
-class ErrSeqArray: public ErrCoreArray
-{
-public:
-	ErrSeqArray(): ErrCoreArray()
-		{ }
-	ErrSeqArray(const char *fmt, ...): ErrCoreArray()
-		{ _COREARRAY_ERRMACRO_(fmt); }
-	ErrSeqArray(const std::string &msg): ErrCoreArray()
-		{ fMessage = msg; }
 };
 
 
@@ -163,7 +169,7 @@ COREARRAY_DLL_LOCAL void GetAlleles(const char *alleles, vector<string> &out);
 // ===========================================================
 
 /// get the list element named str, or return NULL
-inline static size_t GetLength(SEXP val)
+inline static size_t RLength(SEXP val)
 {
 	return (!Rf_isNull(val)) ? XLENGTH(val) : 0;
 }

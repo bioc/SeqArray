@@ -25,16 +25,18 @@ seqApply(gdsfile, var.name, FUN, margin=c("by.variant", "by.sample"),
         \code{margin = "by.variant"}: \code{"relative"} for indexing in the
         selection defined by \code{\link{seqSetFilter}}, \code{"absolute"}
         for indexing with respect to all data}
-    \item{.useraw}{use RAW for genotypes}
+    \item{.useraw}{use RAW instead of INTEGER for genotypes and dosages}
     \item{.list_dup}{internal use only}
     \item{...}{optional arguments to \code{FUN}}
 }
 \details{
     The variable name should be \code{"sample.id"}, \code{"variant.id"},
-\code{"position"}, \code{"chromosome"}, \code{"allele"}, \code{"annotation/id"},
-\code{"annotation/qual"}, \code{"annotation/filter"},
+\code{"position"}, \code{"chromosome"}, \code{"allele"}, \code{"genotype"},
+\code{"annotation/id"}, \code{"annotation/qual"}, \code{"annotation/filter"},
 \code{"annotation/info/VARIABLE_NAME"}, or
 \code{"annotation/format/VARIABLE_NAME"}.
+
+\code{"$dosage"} is also allowed for the dosages of reference allele.
 
     The algorithm is highly optimized by blocking the computations to exploit
 the high-speed memory instead of disk.

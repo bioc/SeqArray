@@ -778,7 +778,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Parse_VCF4(SEXP vcf_fn, SEXP header,
 		vector<string> filter_list;
 		{
 			SEXP level = GetListElement(param, "filter.levels");
-			const int n = GetLength(level);
+			const int n = RLength(level);
 			for (int i=0; i < n; i++)
 				filter_list.push_back(CHAR(STRING_ELT(level, i)));
 		}
@@ -801,7 +801,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Parse_VCF4(SEXP vcf_fn, SEXP header,
 		PdAbstractArray varGenoExtra = GDS_Node_Path(Root, "genotype/extra", TRUE);
 
 		const int GenoNumBits= GDS_Array_GetBitOf(varGeno);
-		if ((GenoNumBits!=2) && (GenoNumBits!=8))
+		if (GenoNumBits != 2)
 			throw ErrSeqArray("Invalid data type in genotype/data.");
 		const int GenoBitMask = ~((-1) << GenoNumBits);
 
@@ -826,7 +826,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Parse_VCF4(SEXP vcf_fn, SEXP header,
 			SEXP info_flag = GetListElement(info, "import.flag");
 			TVCF_Field_Info val;
 
-			for (size_t i=0; i < GetLength(info_ID); i++)
+			for (size_t i=0; i < RLength(info_ID); i++)
 			{
 				val.name = CHAR(STRING_ELT(info_ID, i));
 				val.type = INTEGER(info_inttype)[i];
@@ -852,7 +852,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Parse_VCF4(SEXP vcf_fn, SEXP header,
 			SEXP fmt_flag = GetListElement(fmt, "import.flag");
 			TVCF_Field_Format val;
 
-			for (size_t i=0; i < GetLength(fmt_ID); i++)
+			for (size_t i=0; i < RLength(fmt_ID); i++)
 			{
 				val.name = CHAR(STRING_ELT(fmt_ID, i));
 				val.type = INTEGER(fmt_inttype)[i];
@@ -917,7 +917,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Parse_VCF4(SEXP vcf_fn, SEXP header,
 		// chr prefix
 		vector<string> ChrPref;
 		{
-			const R_xlen_t n = GetLength(ChrPrefix);
+			const R_xlen_t n = RLength(ChrPrefix);
 			for (R_xlen_t i=0; i < n; i++)
 				ChrPref.push_back(CHAR(STRING_ELT(ChrPrefix, i)));
 		}
@@ -1354,7 +1354,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Parse_VCF4(SEXP vcf_fn, SEXP header,
 			// -------------------------------------------------
 			// write genotypes
 
-			// determine how many bits (GenoNumBits == 2, 4 or 8)
+			// determine how many bits (GenoNumBits = 2)
 			int num_bits = GenoNumBits;
 			// plus ONE for missing value
 			while ((num_allele + 1) > (1 << num_bits))
