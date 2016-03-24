@@ -9,7 +9,7 @@ margins of arrays or matrices.
 seqApply(gdsfile, var.name, FUN, margin=c("by.variant", "by.sample"),
     as.is=c("none", "list", "integer", "double", "character", "logical", "raw"),
     var.index=c("none", "relative", "absolute"),
-    .useraw=FALSE, .list_dup=TRUE, ...)
+    .useraw=FALSE, .writeraw=FALSE, .list_dup=TRUE, ...)
 }
 \arguments{
     \item{gdsfile}{a \code{\link{SeqVarGDSClass}} object}
@@ -17,7 +17,9 @@ seqApply(gdsfile, var.name, FUN, margin=c("by.variant", "by.sample"),
     \item{FUN}{the function to be applied}
     \item{margin}{giving the dimension which the function will be applied
         over. E.g., for a matrix 1 indicates rows, 2 indicates columns}
-    \item{as.is}{returned value: a list, an integer vector, etc}
+    \item{as.is}{returned value: a list, an integer vector, etc;
+        \code{as.is} can be a \code{connection} object, returned from
+        \code{\link{file}()}}
     \item{var.index}{if \code{"none"}, call \code{FUN(x, ...)} without variable
         index; if \code{"relative"} or \code{"absolute"}, add an argument to
         the user-defined function \code{FUN} like \code{FUN(index, x, ...)}
@@ -26,6 +28,10 @@ seqApply(gdsfile, var.name, FUN, margin=c("by.variant", "by.sample"),
         selection defined by \code{\link{seqSetFilter}}, \code{"absolute"}
         for indexing with respect to all data}
     \item{.useraw}{use RAW instead of INTEGER for genotypes and dosages}
+    \item{.writeraw}{applicable when \code{as.is} is a \code{connection}
+        object: if \code{TRUE} calls \code{\link{writeBin}} and requires
+        the user-defined function returns a RAW vector; otherwise call
+        \code{\link{writeLines}}}
     \item{.list_dup}{internal use only}
     \item{...}{optional arguments to \code{FUN}}
 }
@@ -87,6 +93,17 @@ seqApply(f, c(geno="genotype", phase="phase", qual="annotation/id",
 seqApply(f, "allele",
     FUN=function(x) length(unlist(strsplit(x,","))), as.is="integer")
 
+# output to a file
+fl <- file("tmp.txt", "w")
+seqApply(f, "genotype", FUN=sum, na.rm=TRUE, as.is=fl)
+close(fl)
+
+readLines("tmp.txt")
+seqApply(f, "genotype", FUN=sum, na.rm=TRUE, as.is=stdout())
+seqApply(f, "genotype", FUN=sum, na.rm=TRUE, as.is="integer")
+# should be identical
+
+
 
 ################################################################
 # with an index of variant
@@ -105,7 +122,7 @@ seqResetFilter(f)
 
 # calculate the frequency of reference allele,
 #   a faster version could be obtained by C coding
-af <- seqApply(f, "genotype", FUN=function(x) mean(x==0, na.rm=TRUE),
+af <- seqApply(f, "genotype", FUN=function(x) mean(x==0L, na.rm=TRUE),
     as.is="double")
 length(af)
 summary(af)
@@ -135,6 +152,10 @@ seqApply(f, c(sample.id="sample.id", genotype="genotype"), FUN=print,
 
 # close the GDS file
 seqClose(f)
+
+
+# delete the temporary file
+unlink("tmp.txt")
 }
 
 \keyword{gds}

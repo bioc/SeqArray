@@ -39,7 +39,6 @@
 
 using namespace std;
 using namespace CoreArray;
-using namespace SeqArray;
 
 
 #define LongBool int
@@ -55,35 +54,8 @@ using namespace SeqArray;
 class COREARRAY_DLL_LOCAL TInitObject
 {
 public:
-	struct TFileInfo;
-
-	struct TSelection
-	{
-		TFileInfo *FileInfo;
-		vector<C_BOOL> Sample;   ///< sample selection
-		vector<C_BOOL> Variant;  ///< variant selection
-
-		/// constructor
-		TSelection(TFileInfo &info) { FileInfo = &info; }
-		/// reset 'Sample' and 'Variant' to the actual numbers
-		void Reset();
-	};
-
-	struct TFileInfo
-	{
-		PdGDSFolder Root;  ///< the root of gds file
-		list<TSelection> SelList;  ///< a list of sample and variant selections
-		CChromIndex Chrom;  ///< chromosome indexing
-
-		/// check if Chrom is initialized
-		void NeedChrom();
-	};
-
 	/// constructor
 	TInitObject();
-
-	/// get the associated selection
-	TSelection &Selection(SEXP gds, bool alloc=false);
 
 	/// a vector of TRUE
 	C_BOOL TRUE_ARRAY[1024];
@@ -92,47 +64,11 @@ public:
 	vector<C_UInt8> GENO_BUFFER;
 	/// allocator buffer according to size at least
 	void Need_GenoBuffer(size_t size);
-
-	map<int, TFileInfo> _Map;
 };
 
 extern TInitObject Init;
 
 
-
-
-// ===========================================================
-// GDS Variable Type
-// ===========================================================
-
-class COREARRAY_DLL_LOCAL CVariable
-{
-public:
-	enum TType
-	{
-		ctNone,
-		ctBasic,       ///< sample.id, variant.id, etc
-		ctGenotype,    ///< genotypes or alleles
-		ctDosage,      ///< dosage of reference or specified allele
-		ctPhase,       ///< phase information
-		ctInfo,        ///< variant annotation info field
-		ctFormat,      ///< variant annotation format field
-		ctSampleAnnot  ///< sample annotation
-	};
-};
-
-
-class COREARRAY_DLL_LOCAL CVarApply: public CVariable
-{
-public:
-	C_BOOL *NeedTRUE(size_t size);
-
-	CVarApply() {}
-	virtual ~CVarApply() {}
-
-private:
-	vector<C_BOOL> _TRUE;
-};
 
 
 
@@ -142,13 +78,6 @@ private:
 
 /// Get the number of TRUEs
 #define GetNumOfTRUE(ptr, n)    vec_i8_cnt_nonzero((C_Int8*)(ptr), n)
-
-/// Get the list element named str, or return NULL
-COREARRAY_DLL_LOCAL int MatchElement(const char *txt, const char *list[],
-	size_t nlist);
-
-/// Get the list element named str, or return NULL
-COREARRAY_DLL_LOCAL SEXP GetListElement(SEXP list, const char *str);
 
 /// Get the total count requiring the number of dimension is one
 COREARRAY_DLL_LOCAL int GetGDSObjCount(PdAbstractArray Obj, const char *varname);
@@ -167,13 +96,6 @@ COREARRAY_DLL_LOCAL void GetAlleles(const char *alleles, vector<string> &out);
 // ===========================================================
 // Private functions
 // ===========================================================
-
-/// get the list element named str, or return NULL
-inline static size_t RLength(SEXP val)
-{
-	return (!Rf_isNull(val)) ? XLENGTH(val) : 0;
-}
-
 
 /// check CoreArray function
 inline static const char *SKIP(const char *p)
@@ -198,7 +120,7 @@ inline static void GDS_PATH_PREFIX_CHECK(const char *path)
 	{
 		if ((*path == '~') || (*path == '@'))
 		{
-			throw ErrSeqArray(
+			throw SeqArray::ErrSeqArray(
 				"the variable name contains an invalid prefix '%c'.",
 				*path);
 		}
@@ -212,7 +134,7 @@ inline static void GDS_VARIABLE_NAME_CHECK(const char *p)
 	{
 		if ((*p == '~') || (*p == '@') || (*p == '/'))
 		{
-			throw ErrSeqArray(
+			throw SeqArray::ErrSeqArray(
 				"the variable name contains an invalid prefix '%c'.", *p);
 		}
 	}

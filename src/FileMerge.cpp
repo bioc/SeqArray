@@ -35,6 +35,8 @@
 
 extern "C"
 {
+using namespace SeqArray;
+
 
 #define MERGE_VAR_DEF    \
 	const int TotalNum = Rf_asInteger(num); \
@@ -117,12 +119,9 @@ COREARRAY_DLL_EXPORT SEXP SEQ_MergeGeno(SEXP num, SEXP varidx, SEXP files,
 		vector<CVarApplyByVariant> Files(FileCnt);
 		for (int i=0; i < FileCnt; i++)
 		{
-			SEXP f = VECTOR_ELT(files, i);
-			TInitObject::TSelection &Sel = Init.Selection(f, true);
+			SEXP file = VECTOR_ELT(files, i);
 			Files[i].InitObject(CVariable::ctGenotype, "genotype/data",
-				GDS_R_SEXP2FileRoot(f),
-				Sel.Variant.size(), &Sel.Variant[0],
-				Sel.Sample.size(), &Sel.Sample[0], false);
+				GetFileInfo(file), false);
 		}
 
 		vector<PdAbstractArray> pAllele(FileCnt);
@@ -150,7 +149,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_MergeGeno(SEXP num, SEXP varidx, SEXP files,
 
 		int div = TotalNum / 25;
 		if (div <= 0) div = 1;
-		bool Verbose = (Rf_asLogical(GetListElement(param, "verbose")) == TRUE);
+		bool Verbose = (Rf_asLogical(RGetListElement(param, "verbose")) == TRUE);
 
 		// for-loop
 		for (int i=1; i <= TotalNum; i++)
@@ -245,12 +244,9 @@ COREARRAY_DLL_EXPORT SEXP SEQ_MergePhase(SEXP num, SEXP varidx, SEXP files,
 		vector<CVarApplyByVariant> Files(FileCnt);
 		for (int i=0; i < FileCnt; i++)
 		{
-			SEXP f = VECTOR_ELT(files, i);
-			TInitObject::TSelection &Sel = Init.Selection(f, true);
+			SEXP file = VECTOR_ELT(files, i);
 			Files[i].InitObject(CVariable::ctPhase, "phase/data",
-				GDS_R_SEXP2FileRoot(f),
-				Sel.Variant.size(), &Sel.Variant[0],
-				Sel.Sample.size(), &Sel.Sample[0], false);
+				GetFileInfo(file), false);
 		}
 
 		PdGDSFolder Root = GDS_R_SEXP2FileRoot(export_file);
@@ -263,7 +259,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_MergePhase(SEXP num, SEXP varidx, SEXP files,
 
 		int div = TotalNum / 25;
 		if (div <= 0) div = 1;
-		bool Verbose = (Rf_asLogical(GetListElement(param, "verbose"))==TRUE);
+		bool Verbose = (Rf_asLogical(RGetListElement(param, "verbose"))==TRUE);
 		vector<int> phase_buf(pcnt);
 
 		// for-loop
@@ -318,16 +314,12 @@ COREARRAY_DLL_EXPORT SEXP SEQ_MergeInfo(SEXP num, SEXP varidx, SEXP files,
 		vector<CVarApplyByVariant> Files(FileCnt);
 		for (int i=0; i < FileCnt; i++)
 		{
-			SEXP f = VECTOR_ELT(files, i);
-			TInitObject::TSelection &Sel = Init.Selection(f, true);
+			SEXP file = VECTOR_ELT(files, i);
 			Files[i].InitObject(
 				(VarName=="annotation/id" || VarName=="annotation/qual" ||
 					VarName=="annotation/filter") ?
 					CVariable::ctBasic : CVariable::ctInfo,
-				VarName.c_str(),
-				GDS_R_SEXP2FileRoot(f),
-				Sel.Variant.size(), &Sel.Variant[0],
-				Sel.Sample.size(), &Sel.Sample[0], false);
+				VarName.c_str(), GetFileInfo(file), false);
 		}
 
 		PdGDSFolder Root = GDS_R_SEXP2FileRoot(export_file);
@@ -389,12 +381,9 @@ COREARRAY_DLL_EXPORT SEXP SEQ_MergeFormat(SEXP num, SEXP varidx, SEXP files,
 		vector<CVarApplyByVariant> Files(FileCnt);
 		for (int i=0; i < FileCnt; i++)
 		{
-			SEXP f = VECTOR_ELT(files, i);
-			TInitObject::TSelection &Sel = Init.Selection(f, true);
+			SEXP file = VECTOR_ELT(files, i);
 			Files[i].InitObject(CVariable::ctFormat, VarName.c_str(),
-				GDS_R_SEXP2FileRoot(f),
-				Sel.Variant.size(), &Sel.Variant[0],
-				Sel.Sample.size(), &Sel.Sample[0], false);
+				GetFileInfo(file), false);
 			if (Files[i].DimCnt != 2)
 				throw ErrSeqArray("SEQ_MergeFormat: unsupported FORMAT dimension.");
 		}
@@ -405,8 +394,8 @@ COREARRAY_DLL_EXPORT SEXP SEQ_MergeFormat(SEXP num, SEXP varidx, SEXP files,
 
 		int div = TotalNum / 25;
 		if (div <= 0) div = 1;
-		SEXP NAs = GetListElement(param, "na");
-		bool Verbose = (Rf_asLogical(GetListElement(param, "verbose"))==TRUE);
+		SEXP NAs = RGetListElement(param, "na");
+		bool Verbose = (Rf_asLogical(RGetListElement(param, "verbose"))==TRUE);
 		vector<SEXP> RDList(FileCnt);
 
 		// for-loop

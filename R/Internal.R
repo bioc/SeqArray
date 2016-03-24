@@ -12,8 +12,9 @@
 #
 .seldim <- function(gdsfile)
 {
-    # seldim[1L] -- # of selected samples
-    # seldim[2L] -- # of selected variants
+    # seldim[1L] -- ploidy
+    # seldim[2L] -- # of selected samples
+    # seldim[3L] -- # of selected variants
     .Call(SEQ_Summary, gdsfile, "genotype")$seldim
 }
 
@@ -24,7 +25,7 @@
 #
 .cfunction0 <- function(name)
 {
-    fn <- function(x) NULL
+    fn <- function() NULL
     f <- quote(.Call(SEQ_ExternalName0))
     f[[1L]] <- .Call
     f[[2L]] <- getNativeSymbolInfo(name, "SeqArray")$address

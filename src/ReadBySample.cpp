@@ -22,6 +22,9 @@
 #include "ReadBySample.h"
 
 
+namespace SeqArray
+{
+
 static void GetFirstAndLength(C_BOOL *sel, size_t n, C_Int32 &st, C_Int32 &len)
 {
 	st = 0; len = 0;
@@ -87,7 +90,7 @@ void CVarApplyBySample::InitObject(TType Type, const char *Path, PdGDSObj Root,
 			if ((DimCnt != 1) || (GDS_Array_GetTotalCount(Node) != nSample))
 				throw ErrSeqArray(ERR_DIM, Path);
 			CellCount = 1;
-			SelPtr[0] = NeedTRUE(1);
+			SelPtr[0] = NeedTRUEs(1);
 			break;
 
 		case ctGenotype:
@@ -147,9 +150,9 @@ void CVarApplyBySample::InitObject(TType Type, const char *Path, PdGDSObj Root,
 			CellCount *= DLen[2];
 			Init.Need_GenoBuffer(CellCount);
 
-			SelPtr[0] = NeedTRUE(1);
+			SelPtr[0] = NeedTRUEs(1);
 			SelPtr[1] = &Selection[0];
-			SelPtr[2] = NeedTRUE(DLen[2]);
+			SelPtr[2] = NeedTRUEs(DLen[2]);
 			break;
 
 		case ctPhase:
@@ -162,13 +165,13 @@ void CVarApplyBySample::InitObject(TType Type, const char *Path, PdGDSObj Root,
 				throw ErrSeqArray(ERR_DIM, Path);
 
 			CellCount = Num_Variant;
-			SelPtr[0] = NeedTRUE(1);
+			SelPtr[0] = NeedTRUEs(1);
 			GetFirstAndLength(VariantSel, nVariant, VariantStart, VariantCount);
 			SelPtr[1] = VariantSel + VariantStart;
 			if (DimCnt > 2)
 			{
 				CellCount *= DLen[2];
-				SelPtr[2] = NeedTRUE(DLen[2]);
+				SelPtr[2] = NeedTRUEs(DLen[2]);
 			}
 			break;
 
@@ -220,11 +223,11 @@ void CVarApplyBySample::InitObject(TType Type, const char *Path, PdGDSObj Root,
 				}
 			}
 
-			SelPtr[0] = NeedTRUE(1);
+			SelPtr[0] = NeedTRUEs(1);
 			SelPtr[1] = &Selection[0];
 			if (DimCnt > 2)
 			{
-				SelPtr[2] = NeedTRUE(DLen[2]);
+				SelPtr[2] = NeedTRUEs(DLen[2]);
 				CellCount *= DLen[2];
 			}
 			break;
@@ -241,11 +244,11 @@ void CVarApplyBySample::InitObject(TType Type, const char *Path, PdGDSObj Root,
 
 			VariantStart = 0; VariantCount = DLen[1];
 			CellCount = 1;
-			SelPtr[0] = NeedTRUE(1);
+			SelPtr[0] = NeedTRUEs(1);
 			if (DimCnt > 1)
 			{
 				CellCount *= DLen[1];
-				SelPtr[1] = NeedTRUE(DLen[1]);
+				SelPtr[1] = NeedTRUEs(DLen[1]);
 			}
 			break;
 
@@ -430,27 +433,20 @@ SEXP CVarApplyBySample::NeedRData(int &nProtected)
 			nProtected ++;
 		}
 
-		SEXP name_list, tmp;
+		int *p;
 		switch (VarType)
 		{
 		case ctGenotype:
-			PROTECT(dim = NEW_INTEGER(2));
-			INTEGER(dim)[0] = DLen[2]; INTEGER(dim)[1] = Num_Variant;
+			p = INTEGER(dim = NEW_INTEGER(2));
+			p[0] = DLen[2]; p[1] = Num_Variant;
 			SET_DIM(ans, dim);
-			PROTECT(name_list = NEW_LIST(2));
-			PROTECT(tmp = NEW_CHARACTER(2));
-				SET_STRING_ELT(tmp, 0, mkChar("allele"));
-				SET_STRING_ELT(tmp, 1, mkChar("variant"));
-				SET_NAMES(name_list, tmp);
-			SET_DIMNAMES(ans, name_list);
-			nProtected += 3;
 			break;
 
 		case ctPhase:
 			if (DimCnt > 2)  // DimCnt = 2 or 3 only
 			{
-				PROTECT(dim = NEW_INTEGER(2)); nProtected ++;
-				INTEGER(dim)[0] = DLen[2]; INTEGER(dim)[1] = Num_Variant;
+				p = INTEGER(dim = NEW_INTEGER(2));
+				p[0] = DLen[2]; p[1] = Num_Variant;
 				SET_DIM(ans, dim);
 			}
 			break;
@@ -458,9 +454,8 @@ SEXP CVarApplyBySample::NeedRData(int &nProtected)
 		case ctFormat:
 			if (DimCnt > 2)  // DimCnt = 2 or 3 only
 			{
-				PROTECT(dim = NEW_INTEGER(2)); nProtected ++;
-				INTEGER(dim)[0] = DLen[2];
-				INTEGER(dim)[1] = CellCount / DLen[2];
+				p = INTEGER(dim = NEW_INTEGER(2));
+				p[0] = DLen[2]; p[1] = CellCount / DLen[2];
 				SET_DIM(ans, dim);
 			}
 			break;
@@ -475,13 +470,20 @@ SEXP CVarApplyBySample::NeedRData(int &nProtected)
 		return it->second;
 }
 
+}
 
 
 extern "C"
 {
+using namespace SeqArray;
+
 // ===========================================================
 // Apply functions over margins on a working space
 // ===========================================================
+
+COREARRAY_DLL_LOCAL extern const char *Txt_Apply_AsIs[];
+COREARRAY_DLL_LOCAL extern const char *Txt_Apply_VarIdx[];
+
 
 /// Apply functions over margins on a working space
 COREARRAY_DLL_EXPORT SEXP SEQ_Apply_Sample(SEXP gdsfile, SEXP var_name,
@@ -494,7 +496,8 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Apply_Sample(SEXP gdsfile, SEXP var_name,
 	COREARRAY_TRY
 
 		// the selection
-		TInitObject::TSelection &Sel = Init.Selection(gdsfile);
+		CFileInfo &File = GetFileInfo(gdsfile);
+		TSelection &Sel = File.Selection();
 		// the GDS root node
 		PdGDSFolder Root = GDS_R_SEXP2FileRoot(gdsfile);
 
@@ -569,11 +572,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Apply_Sample(SEXP gdsfile, SEXP var_name,
 
 		// ===============================================================
 		// as.is
-		static const char *AsList[] =
-		{
-			"none", "list", "integer", "double", "character", "logical", "raw"
-		};
-		int DatType = MatchElement(CHAR(STRING_ELT(as_is, 0)), AsList, 7);
+		int DatType = MatchText(CHAR(STRING_ELT(as_is, 0)), Txt_Apply_AsIs);
 		if (DatType < 0)
 			throw ErrSeqArray("'as.is' is not valid!");
 		switch (DatType)
@@ -612,12 +611,15 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Apply_Sample(SEXP gdsfile, SEXP var_name,
 			SET_NAMES(R_call_param, GET_NAMES(var_name));
 		}
 
-		// 1 -- none, 2 -- relative, 3 -- absolute
-		int VarIdx = INTEGER(var_index)[0];
+		// ===============================================================
+		// var.index
+		int VarIdx = MatchText(CHAR(STRING_ELT(var_index, 0)), Txt_Apply_VarIdx);
+		if (VarIdx < 0)
+			throw ErrSeqArray("'var.index' is not valid!");
 
 		SEXP R_fcall;
 		SEXP R_Index = NULL;
-		if (VarIdx > 1)
+		if (VarIdx > 0)
 		{
 			PROTECT(R_Index = NEW_INTEGER(1));
 			nProtected ++;
@@ -638,13 +640,12 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Apply_Sample(SEXP gdsfile, SEXP var_name,
 		do {
 			switch (VarIdx)
 			{
-				case 2:
-					INTEGER(R_Index)[0] = ans_index + 1;
-					break;
-				case 3:
-					INTEGER(R_Index)[0] = NodeList.begin()->CurIndex + 1;
-					break;
+			case 1:  // relative
+				INTEGER(R_Index)[0] = ans_index + 1; break;
+			case 2:
+				INTEGER(R_Index)[0] = NodeList.begin()->CurIndex + 1; break;
 			}
+
 			if (NodeList.size() <= 1)
 			{
 				// ToDo: optimize this
@@ -652,7 +653,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Apply_Sample(SEXP gdsfile, SEXP var_name,
 				if (tmp != R_call_param)
 				{
 					R_call_param = tmp;
-					if (VarIdx > 1)
+					if (VarIdx > 0)
 					{
 						PROTECT(R_fcall = LCONS(FUN, LCONS(R_Index,
 							LCONS(R_call_param, LCONS(R_DotsSymbol, R_NilValue)))));

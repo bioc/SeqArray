@@ -196,6 +196,24 @@ setMethod("seqSetFilter", signature(object="SeqVarGDSClass",
     }
 )
 
+setMethod("seqSetFilter", signature(object="SeqVarGDSClass",
+    variant.sel="IRanges"),
+    function(object, variant.sel, chr, verbose=TRUE)
+    {
+        stopifnot(is.vector(chr))
+        if (length(chr) > 1L)
+            stopifnot(length(chr) == length(variant.sel))
+        else
+            chr <- rep(chr, length(variant.sel))
+
+        seqSetFilterChrom(object,
+            include = chr,
+            from.bp = BiocGenerics::start(variant.sel),
+            to.bp   = BiocGenerics::end(variant.sel),
+            verbose = verbose)
+        invisible()
+    }
+)
 
 
 
@@ -286,10 +304,10 @@ seqGetData <- function(gdsfile, var.name, .useraw=FALSE)
 # Apply functions over margins on a working space with selected samples and variants
 #
 seqApply <- function(gdsfile, var.name, FUN,
-    margin = c("by.variant", "by.sample"), as.is = c("none", "list",
-    "integer", "double", "character", "logical", "raw"),
-    var.index = c("none", "relative", "absolute"),
-    .useraw=FALSE, .list_dup=TRUE, ...)
+    margin=c("by.variant", "by.sample"),
+    as.is=c("none", "list", "integer", "double", "character", "logical", "raw"),
+    var.index=c("none", "relative", "absolute"),
+    .useraw=FALSE, .writeraw=FALSE, .list_dup=TRUE, ...)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
@@ -297,23 +315,30 @@ seqApply <- function(gdsfile, var.name, FUN,
 
     FUN <- match.fun(FUN)
     margin <- match.arg(margin)
-    as.is <- match.arg(as.is)
     var.index <- match.arg(var.index)
-    var.index <- match(var.index, c("none", "relative", "absolute"))
+    param <- list(useraw=.useraw, writeraw=.writeraw, list_dup=.list_dup)
+
+    if (inherits(as.is, "connection"))
+    {
+        param$funbin <- base::writeBin
+        param$funline <- base::writeLines
+        param$funcon <- as.is
+        as.is <- "con"
+    } else
+        as.is <- match.arg(as.is)
 
     if (margin == "by.variant")
     {
-        # C call
+        # C call, by.variant
         rv <- .Call(SEQ_Apply_Variant, gdsfile, var.name, FUN, as.is,
-            var.index, .useraw, .list_dup, new.env())
-        if (as.is == "none") return(invisible())
-    } else if (margin == "by.sample")
-    {
-        # C call
+            var.index, param, new.env())
+    } else {
+        # C call, by.sample
         rv <- .Call(SEQ_Apply_Sample, gdsfile, var.name, FUN, as.is,
             var.index, .useraw, new.env())
-        if (as.is == "none") return(invisible())
     }
+
+    if (as.is %in% c("none", "con")) return(invisible())
     rv
 }
 
@@ -361,8 +386,6 @@ seqMissing <- function(gdsfile, per.variant=TRUE,
             })
     } else {
         dm <- .seldim(gdsfile)
-        # dm[1] -- Num of selected samples, dm[2] -- Num of selected variants
-
         sum <- seqParallel(parallel, gdsfile, split="by.variant",
             FUN = function(f, num)
             {
@@ -371,8 +394,8 @@ seqMissing <- function(gdsfile, per.variant=TRUE,
                     as.is="none", FUN=.cfunction2("FC_Missing_PerSample"),
                     y=tmpsum)
                 tmpsum
-            }, .combine="+", num=dm[1L])
-        sum / (2L * dm[2L])
+            }, .combine="+", num=dm[2L])
+        sum / (dm[1L] * dm[3L])
     }
 }
 
@@ -401,11 +424,8 @@ seqAlleleFreq <- function(gdsfile, ref.allele=0L,
     } else if (is.numeric(ref.allele))
     {
         dm <- .seldim(gdsfile)
-        # dm[1] -- Num of selected samples, dm[2] -- Num of selected variants
-        if (!(length(ref.allele) %in% c(1L, dm[2L])))
-        {
+        if (!(length(ref.allele) %in% c(1L, dm[3L])))
             stop("'length(ref.allele)' should be 1 or the number of selected variants.")
-        }
 
         if (length(ref.allele) == 1L)
         {
@@ -431,11 +451,8 @@ seqAlleleFreq <- function(gdsfile, ref.allele=0L,
     } else if (is.character(ref.allele))
     {
         dm <- .seldim(gdsfile)
-        # dm[1] -- Num of selected samples, dm[2] -- Num of selected variants
-        if (length(ref.allele) != dm[2L])
-        {
+        if (length(ref.allele) != dm[3L])
             stop("'length(ref.allele)' should be the number of selected variants.")
-        }
 
         seqParallel(parallel, gdsfile, split="by.variant",
             .selection.flag=TRUE,
