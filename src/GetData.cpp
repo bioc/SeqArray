@@ -248,8 +248,16 @@ COREARRAY_DLL_EXPORT SEXP SEQ_GetData(SEXP gdsfile, SEXP var_name, SEXP UseRaw)
 					p[0] = NodeVar.DLen[2]; p[1] = nSample; p[2] = nVariant;
 				SET_DIM(rv_ans, dim);
 
+				SEXP name_list = PROTECT(NEW_LIST(3));
+				SEXP tmp = PROTECT(NEW_CHARACTER(3));
+					SET_STRING_ELT(tmp, 0, mkChar("allele"));
+					SET_STRING_ELT(tmp, 1, mkChar("sample"));
+					SET_STRING_ELT(tmp, 2, mkChar("variant"));
+					SET_NAMES(name_list, tmp);
+				SET_DIMNAMES(rv_ans, name_list);
+
 				// finally
-				UNPROTECT(2);
+				UNPROTECT(4);
 			}
 
 		} else if (strcmp(name, "@genotype") == 0)
@@ -400,6 +408,23 @@ COREARRAY_DLL_EXPORT SEXP SEQ_GetData(SEXP gdsfile, SEXP var_name, SEXP UseRaw)
 				SET_STRING_ELT(tmp, 0, mkChar("length"));
 				SET_STRING_ELT(tmp, 1, mkChar("data"));
 				SET_NAMES(rv_ans, tmp);
+				if (XLENGTH(DAT) > 0)
+				{
+					SEXP name_list = PROTECT(NEW_LIST(ndim));
+					tmp = PROTECT(NEW_CHARACTER(ndim));
+					if (ndim == 2)
+					{
+						SET_STRING_ELT(tmp, 0, mkChar("sample"));
+						SET_STRING_ELT(tmp, 1, mkChar("variant"));
+					} else {
+						SET_STRING_ELT(tmp, 0, mkChar("n"));
+						SET_STRING_ELT(tmp, 1, mkChar("sample"));
+						SET_STRING_ELT(tmp, 2, mkChar("variant"));
+					}
+					SET_NAMES(name_list, tmp);
+					SET_DIMNAMES(VECTOR_ELT(rv_ans, 1), name_list);
+					UNPROTECT(2);
+				}
 			UNPROTECT(3);
 
 		} else if (strncmp(name, "sample.annotation/", 18) == 0)
@@ -501,8 +526,15 @@ COREARRAY_DLL_EXPORT SEXP SEQ_GetData(SEXP gdsfile, SEXP var_name, SEXP UseRaw)
 					} while (NodeVar.NextCell());
 				}
 
+				SEXP name_list = PROTECT(NEW_LIST(2));
+				SEXP tmp = PROTECT(NEW_CHARACTER(2));
+					SET_STRING_ELT(tmp, 0, mkChar("sample"));
+					SET_STRING_ELT(tmp, 1, mkChar("variant"));
+					SET_NAMES(name_list, tmp);
+				SET_DIMNAMES(rv_ans, name_list);
+
 				// finally
-				UNPROTECT(1);
+				UNPROTECT(3);
 			}
 
 		} else {
