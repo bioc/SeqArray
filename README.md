@@ -24,7 +24,7 @@ Release Version: v1.10.6
 * [Help Documents](http://zhengxwen.github.io/SeqArray/release/help/00Index.html)
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [Data Analytics](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/AnalysisTutorial.html)
 
-Development Version: v1.11.16
+Development Version: v1.11.18
 
 [http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html)
 
@@ -33,7 +33,7 @@ Development Version: v1.11.16
 
 
 
-## Installation
+## Installation (requiring >=R_v3.3.0)
 
 * Bioconductor repository:
 ```R
@@ -45,7 +45,7 @@ biocLite("SeqArray")
 ```R
 library("devtools")
 install_github("zhengxwen/gdsfmt")
-install_github("zhengxwen/SeqArray")
+install_github("zhengxwen/SeqArray", ref="R_v3.3")
 ```
 The `install_github()` approach requires that you build from source, i.e. `make` and compilers must be installed on your system -- see the [R FAQ](http://cran.r-project.org/faqs.html) for your operating system; you may also need to install dependencies manually.
 
