@@ -185,18 +185,33 @@ void CFileInfo::ResetRoot(PdGDSFolder root)
 		SelList.clear();
 		_Chrom.Clear();
 		_Position.clear();
+
 		// sample.id
-		PdAbstractArray N = GDS_Node_Path(root, "sample.id", TRUE);
-		C_Int64 n = GDS_Array_GetTotalCount(N);
+		PdAbstractArray Node = GDS_Node_Path(root, "sample.id", TRUE);
+		C_Int64 n = GDS_Array_GetTotalCount(Node);
 		if ((n < 0) || (n > 2147483647))
 			throw ErrSeqArray(ERR_DIM, "sample.id");
 		_SampleNum = n;
+
 		// variant.id
-		N = GDS_Node_Path(root, "variant.id", TRUE);
-		n = GDS_Array_GetTotalCount(N);
+		Node = GDS_Node_Path(root, "variant.id", TRUE);
+		n = GDS_Array_GetTotalCount(Node);
 		if ((n < 0) || (n > 2147483647))
 			throw ErrSeqArray(ERR_DIM, "variant.id");
 		_VariantNum = n;
+
+		// genotypes
+		_Ploidy = -1;
+		Node = GDS_Node_Path(root, "genotype/data", FALSE);
+		if (Node != NULL)
+		{
+			if (GDS_Array_DimCnt(Node) == 3)
+			{
+				C_Int32 DLen[3];
+				GDS_Array_GetDim(Node, DLen, 3);
+				_Ploidy = DLen[2];
+			}
+		}
 	}
 }
 
@@ -241,6 +256,30 @@ vector<C_Int32> &CFileInfo::Position()
 		GDS_Array_ReadData(N, NULL, NULL, &_Position[0], svInt32);
 	}
 	return _Position;
+}
+
+CIndex<C_UInt8> &CFileInfo::GenoIndex()
+{
+	if (_GenoIndex.Empty())
+	{
+		PdAbstractArray I = GetObj("genotype/@data", TRUE);
+		_GenoIndex.Init(I);
+	}
+	return _GenoIndex;
+}
+
+CIndex<int> &CFileInfo::VarIndex(const string &varname)
+{
+	CIndex<int> &I = _VarIndex[varname];
+	if (I.Empty())
+	{
+		PdAbstractArray N = GDS_Node_Path(_Root, varname.c_str(), FALSE);
+		if (N == NULL)
+			I.InitOne(_VariantNum);
+		else
+			I.Init(N);
+	}
+	return I;
 }
 
 PdAbstractArray CFileInfo::GetObj(const char *name, C_BOOL MustExist)
@@ -297,18 +336,48 @@ COREARRAY_DLL_LOCAL CFileInfo &GetFileInfo(SEXP gdsfile)
 // GDS Variable Type
 // ===========================================================
 
-static C_BOOL TRUEs[64] = {
+static C_BOOL ArrayTRUEs[64] = {
 	1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1,
 	1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1,
 	1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1,
 	1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1
 };
 
+CVarApply::CVarApply()
+{
+	fVarType = ctNone;
+	MarginalSize = 0;
+	MarginalSelect = NULL;
+	Node = NULL;
+	Position = 0;
+}
+
+CVarApply::~CVarApply()
+{ }
+
+void CVarApply::Reset()
+{
+	Position = 0;
+	if (MarginalSize > 0)
+		if (!MarginalSelect[0]) Next();
+}
+
+bool CVarApply::Next()
+{
+	C_BOOL *p = MarginalSelect + Position;
+	while (Position < MarginalSize)
+	{
+		Position ++;
+		if (*(++p)) break;
+	}
+	return (Position < MarginalSize);
+}
+
 C_BOOL *CVarApply::NeedTRUEs(size_t size)
 {
-	if (size <= sizeof(TRUEs))
+	if (size <= sizeof(ArrayTRUEs))
 	{
-		return TRUEs;
+		return ArrayTRUEs;
 	} else if (size > _TRUE.size())
 	{
 		_TRUE.resize(size, TRUE);
@@ -317,7 +386,222 @@ C_BOOL *CVarApply::NeedTRUEs(size_t size)
 }
 
 
+CVarApplyList::~CVarApplyList()
+{
+	for (iterator p = begin(); p != end(); p++)
+	{
+		CVarApply *v = (*p);
+		*p = NULL;
+		delete v;
+	}
+}
 
+bool CVarApplyList::CallNext()
+{
+	bool has_next = true;
+	for (iterator p = begin(); p != end(); p++)
+	{
+		if (!(*p)->Next())
+			has_next = false;
+	}
+	return has_next;
+}
+
+
+
+// ===========================================================
+// GDS Variable Type
+// ===========================================================
+
+static int Progress_ShowNum = 50;
+static int Progress_Line_Num = 100000;
+
+inline static void put_text(Rconnection conn, const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	(*conn->vfprintf)(conn, fmt, args);
+	va_end(args);
+}
+
+CProgress::CProgress(C_Int64 start, C_Int64 count, SEXP conn, bool newline)
+{
+	TotalCount = count;
+	Counter = (start >= 0) ? start : 0;
+	double percent;
+	if (conn)
+		File = My_R_GetConnection(conn);
+	else
+		File = NULL;
+	NewLine = newline;
+
+	if (count > 0)
+	{
+		int n = 100;
+		if (n > count) n = count;
+		if (n < 1) n = 1;
+		_start = _step = (double)count / n;
+		_hit = (C_Int64)(_start);
+		if (Counter > count) Counter = count;
+		percent = (double)Counter / count;
+	} else {
+		_start = _step = 0;
+		_hit = Progress_Line_Num;
+		percent = 0;
+	}
+
+	time_t s; time(&s);
+	_timer.reserve(128);
+	_timer.push_back(pair<double, time_t>(percent, s));
+
+	ShowProgress();
+}
+
+void CProgress::Forward()
+{
+	Counter ++;
+	if (Counter >= _hit)
+	{
+		if (TotalCount > 0)
+		{
+			_start += _step;
+			_hit = (C_Int64)(_start);
+		} else {
+			_hit += Progress_Line_Num;
+		}
+		ShowProgress();
+	}
+}
+
+void CProgress::ShowProgress()
+{
+	if (File)
+	{
+		if (TotalCount > 0)
+		{
+			char ss[Progress_ShowNum + 1];
+			double percent = (double)Counter / TotalCount;
+			int n = (int)round(percent * Progress_ShowNum);
+			memset(ss, '.', sizeof(ss));
+			memset(ss, '=', n);
+			if (n < Progress_ShowNum) ss[n] = '>';
+			ss[Progress_ShowNum] = 0;
+
+			// ETC: estimated time to complete
+			n = (int)_timer.size() - 20;  // 20% as a sliding window size
+			if (n < 0) n = 0;
+			time_t now; time(&now);
+			_timer.push_back(pair<double, time_t>(percent, now));
+
+			double seconds = difftime(now, _timer[n].second);
+			double diff = percent - _timer[n].first;
+			if (diff > 0)
+				seconds = seconds / diff * (1 - percent);
+			else
+				seconds = 999.9 * 60 * 60;
+			percent *= 100;
+
+			// show
+			if (NewLine)
+			{
+				if (seconds < 60)
+				{
+					put_text(File, "[%s] %2.0f%%, ETC: %.0fs\n", ss,
+						percent, seconds);
+				} else if (seconds < 3600)
+				{
+					put_text(File, "[%s] %2.0f%%, ETC: %.1fm\n", ss,
+						percent, seconds/60);
+				} else {
+					put_text(File, "[%s] %2.0f%%, ETC: %.1fh\n", ss,
+						percent, seconds/(60*60));
+				}
+			} else {
+				if (seconds < 60)
+				{
+					put_text(File, "\r[%s] %2.0f%%, ETC: %.0fs  ", ss,
+						percent, seconds);
+				} else if (seconds < 3600)
+				{
+					put_text(File, "\r[%s] %2.0f%%, ETC: %.1fm  ", ss,
+						percent, seconds/60);
+				} else {
+					put_text(File, "\r[%s] %2.0f%%, ETC: %.1fh  ", ss,
+						percent, seconds/(60*60));
+				}
+				if (Counter >= TotalCount)
+					put_text(File, "\n");
+			}
+		} else {
+			int n = Counter / Progress_Line_Num;
+			string s(n, '.');
+			if (NewLine)
+			{
+				if (Counter > 0)
+					put_text(File, "[:%s (%dk lines)]\n", s.c_str(), Counter/1000);
+				else
+					put_text(File, "[: (0 line)]\n");
+			} else {
+				if (Counter > 0)
+					put_text(File, "\r[:%s (%dk lines)]", s.c_str(), Counter/1000);
+				else
+					put_text(File, "\r[: (0 line)]");
+			}
+		}
+		(*File->fflush)(File);
+	}
+}
+
+
+CProgressStdOut::CProgressStdOut(C_Int64 count, bool verbose):
+	CProgress(0, count, NULL, false)
+{
+	if (count < 0)
+		throw ErrSeqArray("%s, 'count' should be greater than zero.", __func__);
+	Verbose = verbose;
+	ShowProgress();
+}
+
+void CProgressStdOut::ShowProgress()
+{
+	if (Verbose && (TotalCount > 0))
+	{
+		char ss[Progress_ShowNum + 1];
+		double percent = (double)Counter / TotalCount;
+		int n = (int)round(percent * Progress_ShowNum);
+		memset(ss, '.', sizeof(ss));
+		memset(ss, '=', n);
+		if (n < Progress_ShowNum) ss[n] = '>';
+		ss[Progress_ShowNum] = 0;
+
+		// ETC: estimated time to complete
+		n = (int)_timer.size() - 20;  // 20% as a sliding window size
+		if (n < 0) n = 0;
+		time_t now; time(&now);
+		_timer.push_back(pair<double, time_t>(percent, now));
+
+		double seconds = difftime(now, _timer[n].second);
+		double diff = percent - _timer[n].first;
+		if (diff > 0)
+			seconds = seconds / diff * (1 - percent);
+		else
+			seconds = 999.9 * 60 * 60;
+		percent *= 100;
+
+		// show
+		if (seconds < 60)
+		{
+			Rprintf("\r[%s] %2.0f%%, ETC: %.0fs  ", ss, percent, seconds);
+		} else if (seconds < 3600)
+		{
+			Rprintf("\r[%s] %2.0f%%, ETC: %.1fm  ", ss, percent, seconds/60);
+		} else {
+			Rprintf("\r[%s] %2.0f%%, ETC: %.1fh  ", ss, percent, seconds/(60*60));
+		}
+		if (Counter >= TotalCount)
+			Rprintf("\n");
+	}
+}
 
 
 
@@ -325,7 +609,7 @@ C_BOOL *CVarApply::NeedTRUEs(size_t size)
 // Define Functions
 // ===========================================================
 
-// the buffer of TRUEs
+// the buffer of ArrayTRUEs
 static vector<C_BOOL> TrueBuffer;
 
 COREARRAY_DLL_LOCAL size_t RLength(SEXP val)
@@ -349,10 +633,48 @@ COREARRAY_DLL_LOCAL SEXP RGetListElement(SEXP list, const char *name)
 	return elmt;
 }
 
+/// Allocate R object given by SVType
+COREARRAY_DLL_LOCAL SEXP RObject_GDS(PdAbstractArray Node, size_t n,
+	int &nProtected, bool bit1_is_logical)
+{
+	SEXP ans = R_NilValue;
+	C_SVType SVType = GDS_Array_GetSVType(Node);
+
+	if (COREARRAY_SV_INTEGER(SVType))
+	{
+		char classname[128];
+		GDS_Node_GetClassName(Node, classname, sizeof(classname));
+		if (strcmp(classname, "dBit1") == 0)
+		{
+			if (bit1_is_logical)
+				PROTECT(ans = NEW_LOGICAL(n));
+			else
+				PROTECT(ans = NEW_INTEGER(n));
+		} else if (GDS_R_Is_Logical(Node))
+		{
+			PROTECT(ans = NEW_LOGICAL(n));
+		} else {
+			PROTECT(ans = NEW_INTEGER(n));
+			nProtected += GDS_R_Set_IfFactor(Node, ans);
+		}
+		nProtected ++;
+	} else if (COREARRAY_SV_FLOAT(SVType))
+	{
+		PROTECT(ans = NEW_NUMERIC(n));
+		nProtected ++;
+	} else if (COREARRAY_SV_STRING(SVType))
+	{
+		PROTECT(ans = NEW_CHARACTER(n));
+		nProtected ++;
+	}
+
+	return ans;
+}
+
 COREARRAY_DLL_LOCAL C_BOOL *NeedArrayTRUEs(size_t len)
 {
-	if (len <= sizeof(TRUEs))
-		return TRUEs;
+	if (len <= sizeof(ArrayTRUEs))
+		return ArrayTRUEs;
 	else if (len > TrueBuffer.size())
 		TrueBuffer.resize(len, TRUE);
 	return &TrueBuffer[0];
