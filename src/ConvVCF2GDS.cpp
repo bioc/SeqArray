@@ -19,7 +19,7 @@
 // along with SeqArray.
 // If not, see <http://www.gnu.org/licenses/>.
 
-#include "Common.h"
+#include "Index.h"
 #include "vectorization.h"
 #include <vector>
 #include <set>
@@ -86,7 +86,8 @@ inline static void Done_VCF_Buffer()
 {
 	VCF_File = NULL;
 	VCF_Buffer.clear();
-	VCF_Buffer_Ptr = VCF_Buffer_EndPtr;
+	vector<char>().swap(VCF_Buffer);
+	VCF_Buffer_Ptr = VCF_Buffer_EndPtr = NULL;
 }
 
 
@@ -146,6 +147,7 @@ inline static void InitText()
 inline static void DoneText()
 {
 	Text_Buffer.clear();
+	vector<char>().swap(Text_Buffer);
 	Text_pBegin = Text_pEnd;
 	save_pBegin = save_pEnd = Text_pBegin;
 }
@@ -547,9 +549,10 @@ inline static void getFloatArray(char *p, char *end, vector<double> &F64s)
 		bool is_dot = false;
 		if ((p < end) && (*p == '.'))
 		{
-			const char *s = p + 1;
+			char *s = p + 1;
 			while ((s < end) && (*s == ' ')) s ++;
 			is_dot = (s >= end) || (*s == ',');
+			if (is_dot) p = s;
 		}
 
 		if (!is_dot)
@@ -574,9 +577,8 @@ inline static void getFloatArray(char *p, char *end, vector<double> &F64s)
 					while ((p < end) && (*p != ',')) p ++;
 				}
 			}
-		} else {
+		} else
 			val = R_NaN;
-		}
 
 		F64s.push_back(val);
 		if ((p < end) && (*p == ',')) p ++;
@@ -637,9 +639,11 @@ struct COREARRAY_DLL_LOCAL TVCF_Info
 		used = false;
 	}
 
-	template<typename TYPE> inline void Index(vector<TYPE> &array, int num_allele)
+	template<typename TYPE> inline void Index(vector<TYPE> &array,
+		int num_allele, TYPE missing)
 	{
 		C_Int32 I32 = array.size();
+		C_Int32 N;
 		switch (number)
 		{
 		case -1:  // variable-length, .
@@ -647,44 +651,52 @@ struct COREARRAY_DLL_LOCAL TVCF_Info
 			break;
 
 		case -2:  // # of alternate alleles, A
-			if (I32 != (num_allele-1))
+			N = num_allele - 1;
+			if (I32 > N)
 			{
 				throw ErrSeqArray(
 					"INFO ID '%s' (Number=A) should have %d value(s), but receives %d.",
-					name.c_str(), num_allele-1, I32);
-			}
-			GDS_Array_AppendData(len_obj, 1, &I32, svInt32);
+					name.c_str(), N, I32);
+			} else if (I32 < N)
+				array.resize(N, missing);
+			GDS_Array_AppendData(len_obj, 1, &N, svInt32);
 			break;
 
 		case -3:  // # of all possible genotypes, G
-			if (I32 != (num_allele+1)*num_allele/2)
+			N = (num_allele + 1) * num_allele / 2;
+			if (I32 > N)
 			{
 				throw ErrSeqArray(
 					"INFO ID '%s' (Number=G) should have %d value(s), but receives %d.",
-					name.c_str(), (num_allele+1)*num_allele/2, I32);
-			}
-			GDS_Array_AppendData(len_obj, 1, &I32, svInt32);
+					name.c_str(), N, I32);
+			} else if (I32 < N)
+				array.resize(N, missing);
+			GDS_Array_AppendData(len_obj, 1, &N, svInt32);
 			break;
 
 		case -4:  // # of alleles, R
-			if (I32 != num_allele)
+			N = num_allele;
+			if (I32 > N)
 			{
 				throw ErrSeqArray(
 					"INFO ID '%s' (Number=R) should have %d value(s), but receives %d.",
-					name.c_str(), num_allele, I32);
-			}
-			GDS_Array_AppendData(len_obj, 1, &I32, svInt32);
+					name.c_str(), N, I32);
+			} else if (I32 < N)
+				array.resize(N, missing);
+			GDS_Array_AppendData(len_obj, 1, &N, svInt32);
 			break;
 
 		default:
 			if (number >= 0)
 			{
-				if (number != (int)array.size())
+				N = array.size();
+				if (N > number)
 				{
 					throw ErrSeqArray(
 						"INFO ID '%s' should have %d value(s), but receives %d.",
-						name.c_str(), number, (int)array.size());
-				}
+						name.c_str(), number, N);
+				} else if (N < number)
+					array.resize(number, missing);
 			} else
 				throw ErrSeqArray("Invalid value 'number' in TVCF_Info.");
 		}
@@ -859,9 +871,10 @@ public:
 			bool is_dot = false;
 			if ((p < end) && (*p == '.'))
 			{
-				const char *s = p + 1;
+				char *s = p + 1;
 				while ((s < end) && (*s == ' ')) s ++;
 				is_dot = (s >= end) || (*s == ',');
+				if (is_dot) p = s;
 			}
 
 			if (!is_dot)
@@ -1471,14 +1484,14 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Parse(SEXP vcf_fn, SEXP header,
 						{
 						case FIELD_TYPE_INT:
 							getInt32Array(ValBegin, ValEnd, I32s);
-							pI->Index(I32s, num_allele);
+							pI->Index(I32s, num_allele, NA_INTEGER);
 							GDS_Array_AppendData(pI->data_obj, I32s.size(),
 								&(I32s[0]), svInt32);
 							break;
 
 						case FIELD_TYPE_FLOAT:
 							getFloatArray(ValBegin, ValEnd, F64s);
-							pI->Index(F64s, num_allele);
+							pI->Index(F64s, num_allele, R_NaN);
 							GDS_Array_AppendData(pI->data_obj, F64s.size(),
 								&(F64s[0]), svFloat64);
 							break;
@@ -1496,7 +1509,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Parse(SEXP vcf_fn, SEXP header,
 
 						case FIELD_TYPE_STRING:
 							getStringArray(ValBegin, ValEnd, S8s);
-							pI->Index(S8s, num_allele);
+							pI->Index(S8s, num_allele, BlankString);
 							GDS_Array_AppendData(pI->data_obj, S8s.size(),
 								&(S8s[0]), svStrUTF8);
 							break;
@@ -1744,7 +1757,6 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Parse(SEXP vcf_fn, SEXP header,
 					}
 				}
 			}
-
 
 			// -------------------------------------------------
 			// write genotypes

@@ -66,12 +66,15 @@ void CChromIndex::AddChrom(PdGDSFolder Root)
 	rng.Length = 1;
 
 	Map.clear();
-	string txt[1024];
+	PosToChr.Clear();
+
+	const C_Int32 NMAX = 4096;
+	string txt[NMAX];
 
 	while (idx < NumChrom)
 	{
 		len = NumChrom - idx;
-		if (len > 1024) len = 1024;
+		if (len > NMAX) len = NMAX;
 		GDS_Array_ReadData(varChrom, &idx, &len, &txt, svStrUTF8);
 		for (int i=0; i < len; i++)
 		{
@@ -80,6 +83,7 @@ void CChromIndex::AddChrom(PdGDSFolder Root)
 				rng.Length ++;
 			} else {
 				Map[last].push_back(rng);
+				PosToChr.Add(last, rng.Length);
 				last = string(txt[i].begin(), txt[i].end());
 				rng.Start = idx + i;
 				rng.Length = 1;
@@ -89,6 +93,8 @@ void CChromIndex::AddChrom(PdGDSFolder Root)
 	}
 
 	Map[last].push_back(rng);
+	PosToChr.Add(last, rng.Length);
+	PosToChr.Init();
 }
 
 void CChromIndex::Clear()
@@ -235,7 +241,7 @@ CChromIndex &CFileInfo::Chromosome()
 {
 	if (!_Root)
 		throw ErrSeqArray(ERR_FILE_ROOT);
-	if (_Chrom.Map.empty())
+	if (_Chrom.Empty())
 		_Chrom.AddChrom(_Root);
 	return _Chrom;
 }
@@ -252,7 +258,7 @@ vector<C_Int32> &CFileInfo::Position()
 				(GDS_Array_GetTotalCount(N) != _VariantNum))
 			throw ErrSeqArray(ERR_DIM, "position");
 		// read
-		_Position.resize(_VariantNum, 0);
+		_Position.resize(_VariantNum);
 		GDS_Array_ReadData(N, NULL, NULL, &_Position[0], svInt32);
 	}
 	return _Position;
@@ -383,6 +389,16 @@ C_BOOL *CVarApply::NeedTRUEs(size_t size)
 		_TRUE.resize(size, TRUE);
 	}
 	return &_TRUE[0];
+}
+
+
+CApply_Variant::CApply_Variant(): CVarApply()
+{ }
+
+CApply_Variant::CApply_Variant(CFileInfo &File): CVarApply()
+{
+	MarginalSize = File.VariantNum();
+	MarginalSelect = File.Selection().pVariant();
 }
 
 
@@ -716,6 +732,123 @@ COREARRAY_DLL_LOCAL int MatchText(const char *txt, const char *list[])
 			return i;
 	}
 	return -1;
+}
+
+/// Get the number of alleles
+COREARRAY_DLL_LOCAL int GetNumOfAllele(const char *allele_list)
+{
+	int n = 0;
+	while (*allele_list)
+	{
+		if (*allele_list != ',')
+		{
+			n ++;
+			while ((*allele_list != ',') && (*allele_list != 0))
+				allele_list ++;
+			if (*allele_list == ',')
+			{
+				allele_list ++;
+				if (*allele_list == 0)
+				{
+					n ++;
+					break;
+				}
+			}
+		}
+	}
+	return n;
+}
+
+/// Get the index in an allele list
+COREARRAY_DLL_LOCAL int GetIndexOfAllele(const char *allele, const char *allele_list)
+{
+	const size_t len = strlen(allele);
+	const char *st = allele_list;
+	int idx = 0;
+	while (*allele_list)
+	{
+		while ((*allele_list != ',') && (*allele_list != 0))
+			allele_list ++;
+		size_t n = allele_list - st;
+		if ((len==n) && (strncmp(allele, st, n)==0))
+			return idx;
+		if (*allele_list == ',')
+		{
+			idx ++;
+			allele_list ++;
+			st = allele_list;
+		}
+	}
+	return -1;
+}
+
+/// Get strings split by comma
+COREARRAY_DLL_LOCAL void GetAlleles(const char *alleles, vector<string> &out)
+{
+	out.clear();
+	const char *p, *s;
+	p = s = alleles;
+	do {
+		if ((*p == 0) || (*p == ','))
+		{
+			out.push_back(string(s, p));
+			if (*p == ',') p ++;
+			s = p;
+			if (*p == 0) break;
+		}
+		p ++;
+	} while (1);
+}
+
+
+/// get PdGDSObj from a SEXP object
+COREARRAY_DLL_LOCAL void GDS_PATH_PREFIX_CHECK(const char *path)
+{
+	for (; *path != 0; path++)
+	{
+		if ((*path == '~') || (*path == '@'))
+		{
+			throw SeqArray::ErrSeqArray(
+				"the variable name contains an invalid prefix '%c'.",
+				*path);
+		}
+	}
+}
+
+COREARRAY_DLL_LOCAL void GDS_VARIABLE_NAME_CHECK(const char *p)
+{
+	for (; *p != 0; p++)
+	{
+		if ((*p == '~') || (*p == '@') || (*p == '/'))
+		{
+			throw ErrSeqArray(
+				"the variable name contains an invalid prefix '%c'.", *p);
+		}
+	}
+}
+
+/// get PdGDSObj from a SEXP object
+COREARRAY_DLL_LOCAL string GDS_PATH_PREFIX(const string &path, char prefix)
+{
+	string s = path;
+	for (int i=s.size()-1; i >= 0; i--)
+	{
+		if (s[i] == '/')
+		{
+			if (((int)s.size() > i+1) && (s[i+1] == '~'))
+				s[i+1] = prefix;
+			else
+				s.insert(i+1, &prefix, 1);
+			return s;
+		}
+	}
+
+	if ((s.size() > 0) && (s[0] == '~'))
+		s[0] = prefix;
+	else
+		s.insert(s.begin(), prefix);
+
+	return s;
 }
 
 }

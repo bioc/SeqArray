@@ -52,6 +52,10 @@ extern "C"
 COREARRAY_DLL_LOCAL Rconnection My_R_GetConnection(SEXP x);
 #define R_GetConnection My_R_GetConnection
 #endif
+
+
+/// define missing value of RAW
+#define NA_RAW     0xFF
 }
 
 
@@ -64,6 +68,83 @@ using namespace CoreArray;
 
 
 class ErrSeqArray;
+
+
+// ===========================================================
+// Run-length encoding (RLE) object
+// ===========================================================
+
+/// object with run-length encoding
+template<typename TYPE> class COREARRAY_DLL_LOCAL C_RLE
+{
+public:
+	/// constructor
+	C_RLE()
+	{
+		TotalLength = 0;
+		Position = AccIndex = AccOffset = 0;
+	}
+
+	void Init()
+	{
+		TotalLength = 0;
+		vector<C_UInt32>::iterator p;
+		for (p=Lengths.begin(); p != Lengths.end(); p++)
+			TotalLength += *p;
+		Position = AccIndex = AccOffset = 0;
+	}
+
+	void Add(TYPE &val, C_UInt32 len)
+	{
+		Values.push_back(val);
+		Lengths.push_back(len);
+	}
+
+	void Clear()
+	{
+		Values.clear(); Lengths.clear();
+		TotalLength = 0;
+		Position = AccIndex = AccOffset = 0;
+	}
+
+	const TYPE &operator [](size_t pos)
+	{
+		if (pos >= TotalLength)
+			throw "Invalid position in C_RLE.";
+		if (pos < Position)
+			Position = AccIndex = AccOffset = 0;
+		for (; Position < pos; )
+		{
+			size_t L = Lengths[AccIndex];
+			size_t n = L - AccOffset;
+			if ((Position + n) <= pos)
+			{
+				AccIndex ++; AccOffset = 0;
+			} else {
+				n = pos - Position; AccOffset += n;
+			}
+			Position += n;
+		}
+		return Values[AccIndex];
+	}
+
+	inline bool Empty() const { return (TotalLength <= 0); }
+
+protected:
+	/// values according to Lengths, used in run-length encoding
+	vector<TYPE> Values;
+	/// lengths according to Values, used in run-length encoding
+	vector<C_UInt32> Lengths;
+	/// total number, = sum(Lengths)
+	size_t TotalLength;
+	/// the position relative to the total length
+	size_t Position;
+	/// the index in Lengths according to Position
+	size_t AccIndex;
+	/// the offset according the value of Lengths[AccIndex]
+	size_t AccOffset;
+};
+
 
 // ===========================================================
 // Indexing object
@@ -180,10 +261,7 @@ public:
 		Value = Values[AccIndex];
 	}
 
-	bool Empty()
-	{
-		return (TotalLength <= 0);
-	}
+	inline bool Empty() const { return (TotalLength <= 0); }
 
 protected:
 	/// total number, = sum(Lengths)
@@ -229,8 +307,17 @@ public:
 	/// the total length of a TRangeList object
 	size_t RangeTotalLength(const TRangeList &RngList);
 
+	/// whether it is empty
+	inline bool Empty() const { return Map.empty(); }
+
+	inline const string &operator [](size_t pos) { return PosToChr[pos]; }
+
 	/// map to TRangeList from chromosome coding
 	map<string, TRangeList> Map;
+
+protected:
+	/// position to chromosome
+	C_RLE<string> PosToChr;
 };
 
 
@@ -279,8 +366,10 @@ struct COREARRAY_DLL_LOCAL TSelection
 	vector<C_BOOL> Sample;   ///< sample selection
 	vector<C_BOOL> Variant;  ///< variant selection
 
-	inline C_BOOL *pSample() { return &Sample[0]; }
-	inline C_BOOL *pVariant() { return &Variant[0]; }
+	inline C_BOOL *pSample()
+		{ return Sample.empty() ? NULL : &Sample[0]; }
+	inline C_BOOL *pVariant()
+		{ return Variant.empty() ? NULL : &Variant[0]; }
 };
 
 
@@ -328,9 +417,9 @@ public:
 
 protected:
 	PdGDSFolder _Root;  ///< the root of GDS file
-	int _SampleNum;   ///< the total number of samples
-	int _VariantNum;  ///< the total number of variants
-	int _Ploidy;      ///< ploidy
+	int _SampleNum;     ///< the total number of samples
+	int _VariantNum;    ///< the total number of variants
+	int _Ploidy;        ///< ploidy
 
 	CChromIndex _Chrom;  ///< chromosome indexing
 	vector<C_Int32> _Position;  ///< position
@@ -406,6 +495,17 @@ private:
 };
 
 
+/// The abstract class for applying functions by variant
+class COREARRAY_DLL_LOCAL CApply_Variant: public CVarApply
+{
+public:
+	/// constructor
+	CApply_Variant();
+	/// constructor with file information
+	CApply_Variant(CFileInfo &File);
+};
+
+
 class COREARRAY_DLL_LOCAL CVarApplyList: public vector<CVarApply*>
 {
 public:
@@ -455,6 +555,9 @@ protected:
 // Define Functions
 // ===========================================================
 
+/// Get the number of TRUEs
+#define GetNumOfTRUE(ptr, n)    vec_i8_cnt_nonzero((C_Int8*)(ptr), n)
+
 /// return the length in val, it is safe to call when val=R_NilValue
 COREARRAY_DLL_LOCAL size_t RLength(SEXP val);
 
@@ -473,6 +576,25 @@ COREARRAY_DLL_LOCAL const char *PrettyInt(int val);
 
 /// Text matching, return -1 when no maching
 COREARRAY_DLL_LOCAL int MatchText(const char *txt, const char *list[]);
+
+/// Get the number of alleles
+COREARRAY_DLL_LOCAL int GetNumOfAllele(const char *allele_list);
+
+/// Get the index in an allele list
+COREARRAY_DLL_LOCAL int GetIndexOfAllele(const char *allele, const char *allele_list);
+
+/// Get strings split by comma
+COREARRAY_DLL_LOCAL void GetAlleles(const char *alleles, vector<string> &out);
+
+
+/// get PdGDSObj from a SEXP object
+COREARRAY_DLL_LOCAL void GDS_PATH_PREFIX_CHECK(const char *path);
+
+/// check variable name
+COREARRAY_DLL_LOCAL void GDS_VARIABLE_NAME_CHECK(const char *p);
+
+/// get PdGDSObj from a SEXP object
+COREARRAY_DLL_LOCAL string GDS_PATH_PREFIX(const string &path, char prefix);
 
 
 

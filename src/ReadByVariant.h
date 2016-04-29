@@ -19,7 +19,7 @@
 // along with SeqArray.
 // If not, see <http://www.gnu.org/licenses/>.
 
-#include "Common.h"
+#include "Index.h"
 
 
 namespace SeqArray
@@ -30,15 +30,43 @@ using namespace Vectorization;
 
 // =====================================================================
 
-/// Object for reading basic variabls variant by variant
-class COREARRAY_DLL_LOCAL CApply_Variant_Basic: public CVarApply
+/// Object for reading basic variables variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_Basic: public CApply_Variant
 {
 protected:
 	C_SVType SVType;
 	SEXP VarNode;  ///< R object
 public:
 	/// constructor
-	CApply_Variant_Basic(CFileInfo &File, const char *varname);
+	CApply_Variant_Basic(CFileInfo &File, const char *var_name);
+	virtual void ReadData(SEXP val);
+	virtual SEXP NeedRData(int &nProtected);
+};
+
+
+/// Object for reading positions variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_Pos: public CApply_Variant
+{
+protected:
+	int *PtrPos;
+	SEXP VarNode;  ///< R object
+public:
+	/// constructor
+	CApply_Variant_Pos(CFileInfo &File);
+	virtual void ReadData(SEXP val);
+	virtual SEXP NeedRData(int &nProtected);
+};
+
+
+/// Object for reading chromosomes variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_Chrom: public CApply_Variant
+{
+protected:
+	CChromIndex *ChromIndex;
+	SEXP VarNode;  ///< R object
+public:
+	/// constructor
+	CApply_Variant_Chrom(CFileInfo &File);
 	virtual void ReadData(SEXP val);
 	virtual SEXP NeedRData(int &nProtected);
 };
@@ -47,14 +75,12 @@ public:
 // =====================================================================
 
 /// Object for reading genotypes variant by variant
-class COREARRAY_DLL_LOCAL CApply_Variant_Geno: public CVarApply
+class COREARRAY_DLL_LOCAL CApply_Variant_Geno: public CApply_Variant
 {
 protected:
 	CIndex<C_UInt8> *GenoIndex;  ///< indexing genotypes
 	ssize_t SiteCount;  ///< the total number of entries at a site
 	ssize_t CellCount;  ///< the selected number of entries at a site
-	ssize_t _SampNum;   ///< the number of selected samples
-	int _Ploidy;  ///< ploidy
 	bool UseRaw;  ///< whether use RAW type
 	vector<C_BOOL> Selection;  ///< the buffer of selection
 	AUTO_PTR ExtPtr;           ///< a pointer to the additional buffer
@@ -64,6 +90,9 @@ protected:
 	inline C_UInt8 _ReadGenoData(C_UInt8 *Base);
 
 public:
+	ssize_t SampNum;  ///< the number of selected samples
+	int Ploidy;       ///< ploidy
+
 	/// constructor
 	CApply_Variant_Geno();
 	CApply_Variant_Geno(CFileInfo &File, bool use_raw);
@@ -77,9 +106,6 @@ public:
 	void ReadGenoData(int *Base);
 	/// read genotypes in unsigned 8-bit intetger
 	void ReadGenoData(C_UInt8 *Base);
-
-	inline int SampNum() const { return _SampNum; }
-	inline int Ploidy() const { return _Ploidy; }
 };
 
 
@@ -105,18 +131,19 @@ public:
 // =====================================================================
 
 /// Object for reading phasing information variant by variant
-class COREARRAY_DLL_LOCAL CApply_Variant_Phase: public CVarApply
+class COREARRAY_DLL_LOCAL CApply_Variant_Phase: public CApply_Variant
 {
 protected:
 	ssize_t SiteCount;  ///< the total number of entries at a site
 	ssize_t CellCount;  ///< the selected number of entries at a site
-	ssize_t _SampNum;   ///< the number of selected samples
-	int _Ploidy;  ///< ploidy
 	bool UseRaw;  ///< whether use RAW type
 	vector<C_BOOL> Selection;  ///< the buffer of selection
 	SEXP VarPhase;  ///< genotype R object
 
 public:
+	ssize_t SampNum;  ///< the number of selected samples
+	int Ploidy;       ///< ploidy
+
 	/// constructor
 	CApply_Variant_Phase();
 	CApply_Variant_Phase(CFileInfo &File, bool use_raw);
@@ -125,87 +152,52 @@ public:
 
 	virtual void ReadData(SEXP val);
 	virtual SEXP NeedRData(int &nProtected);
-
-	inline int SampNum() const { return _SampNum; }
-	inline int Ploidy() const { return _Ploidy; }
 };
 
 
 // =====================================================================
-/*
-/// Object for reading format variables variant by variant
-class COREARRAY_DLL_LOCAL CApply_Variant_Format: public CVarApply
+
+/// Object for reading info variables variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_Info: public CApply_Variant
 {
 protected:
-	CIndex<C_UInt8> *VarIndex;  ///< indexing the format variable
-	ssize_t SiteCount;  ///< the total number of entries at a site
-	ssize_t CellCount;  ///< the selected number of entries at a site
-	ssize_t _SampNum;   ///< the number of selected samples
-	int _Ploidy;  ///< ploidy
-
+	CIndex<int> *VarIndex;  ///< indexing the format variable
 	C_SVType SVType;        ///< data type for GDS reading
-	C_BOOL *SelPtr[3];      ///< pointers to selection
-	bool UseRaw;  ///< whether use RAW type
-	map<size_t, SEXP> VarList; ///< a list of SEXP variables
+	C_Int32 BaseNum;        ///< if 2-dim, the size of the first dimension
+	map<int, SEXP> VarList;  ///< a list of SEXP variables
 
 public:
 	/// constructor
-	CApply_Variant_Format();
-	CApply_Variant_Format(CFileInfo &File, const char *var_name, bool use_raw);
-
-	void Init(CFileInfo &File, const char *var_name, bool use_raw);
+	CApply_Variant_Info(CFileInfo &File, const char *var_name);
 
 	virtual void ReadData(SEXP val);
 	virtual SEXP NeedRData(int &nProtected);
-
-	inline int SampNum() const { return _SampNum; }
 };
-*/
 
 
 // =====================================================================
 
-/// Object for reading a variable variant by variant
-class COREARRAY_DLL_LOCAL CApplyByVariant: public CVarApply
+/// Object for reading format variables variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_Format: public CApply_Variant
 {
 protected:
-	PdAbstractArray IndexNode;  ///< the corresponding index variable
-
-	C_Int32 IndexRaw;          ///< the index according to the raw data set
-	C_Int32 NumIndexRaw;       ///< the increment of raw index
-	int NumOfBits;             ///< the number of bits
-	size_t CellCount;          ///< the number of entries for the current variant
-	map<size_t, SEXP> VarList; ///< a list of SEXP variables
+	CIndex<int> *VarIndex;  ///< indexing the format variable
+	ssize_t _TotalSampNum;  ///< the total number of samples
 
 	C_SVType SVType;        ///< data type for GDS reading
-	C_BOOL *SelPtr[3];      ///< pointers to selection
-	bool UseRaw;            ///< whether use RAW type
-
-	vector<C_BOOL> Selection;  ///< the buffer of selection
-	AUTO_PTR ExtPtr;           ///< a pointer to the additional buffer
-
-private:
-	inline int _ReadGenoData(int *Base);
-	inline C_UInt8 _ReadGenoData(C_UInt8 *Base);
+	C_BOOL *SelPtr[2];      ///< pointers to selection
+	map<int, SEXP> VarList;  ///< a list of SEXP variables
 
 public:
-	int TotalNum_Variant;   ///< the total number of variants
-	int _SampNum;         ///< the number of selected samples
+	ssize_t SampNum;  ///< the number of selected samples
 
-	int DimCnt;             ///< the number of dimensions
-	C_Int32 DLen[4];        ///< the dimension size
+	/// constructor
+	CApply_Variant_Format();
+	CApply_Variant_Format(CFileInfo &File, const char *var_name);
 
-	CApplyByVariant();
+	void Init(CFileInfo &File, const char *var_name);
 
-	void InitObject(TVarType Type, const char *Path, CFileInfo &FileInfo,
-		bool _UseRaw);
-
-	virtual void Reset();
-	virtual bool Next();
-
-	/// read data to R object
 	virtual void ReadData(SEXP val);
-	/// return an R object for the next call 'ReadData()'
 	virtual SEXP NeedRData(int &nProtected);
 };
 
