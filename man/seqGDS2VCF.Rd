@@ -9,8 +9,8 @@ seqGDS2VCF(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL, verbose=TRUE)
 }
 \arguments{
     \item{gdsfile}{a \code{\link{SeqVarGDSClass}} object}
-    \item{vcf.fn}{the file name, output a file of VCF format; it can be a
-        \code{connection} object, returned from \code{\link{file}()}}
+    \item{vcf.fn}{the file name, output a file of VCF format; or a
+        \code{\link{connection}} object}
     \item{info.var}{a list of variable names in the INFO field, or NULL for
         using all variables; \code{character(0)} for no variable
         in the INFO field}
@@ -34,11 +34,9 @@ the export.
         structural variants, together with rich annotations.
 }
 \references{
-    The variant call format and VCFtools.
-    Danecek P, Auton A, Abecasis G, Albers CA, Banks E, DePristo MA, Handsaker RE,
-    Lunter G, Marth GT, Sherry ST, McVean G, Durbin R;
-    1000 Genomes Project Analysis Group.
-    Bioinformatics. 2011 Aug 1;27(15):2156-8. Epub 2011 Jun 7.
+    Danecek, P., Auton, A., Abecasis, G., Albers, C.A., Banks, E., DePristo,
+M.A., Handsaker, R.E., Lunter, G., Marth, G.T., Sherry, S.T., et al. (2011).
+The variant call format and VCFtools. Bioinformatics 27, 2156-2158.
 }
 
 \author{Xiuwen Zheng}

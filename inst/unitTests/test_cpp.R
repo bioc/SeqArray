@@ -99,6 +99,24 @@ test_int_count <- function()
 }
 
 
+test_i8_count <- function()
+{
+	set.seed(5000)
+	for (st in sample.int(1000L, 25L))
+	{
+		n <- 50000L + sample.int(64L, 1L) - 1L
+		v <- as.raw(sample.int(256L, n, replace=TRUE))
+		fd <- sample(v, 1L)
+
+		n1 <- SeqArray:::.cfunction3("test_i8_count")(v, st, fd)
+		n2 <- sum(v[st:length(v)] == fd)
+		checkEquals(n1, n2, paste0("i8_count (start=", st, ")"))
+	}
+
+	invisible()
+}
+
+
 test_int_count2 <- function()
 {
 	set.seed(5000)
@@ -112,6 +130,67 @@ test_int_count2 <- function()
 		n1 <- SeqArray:::.cfunction4("test_int32_count2")(v, st, fd1, fd2)
 		n2 <- c(sum(v[st:length(v)] == fd1), sum(v[st:length(v)] == fd2))
 		checkEquals(n1, n2, paste0("int_count2 (start=", st, ")"))
+	}
+
+	invisible()
+}
+
+
+test_i8_count2 <- function()
+{
+	set.seed(5000)
+	for (st in sample.int(1000L, 25L))
+	{
+		n <- 50000L + sample.int(64L, 1L) - 1L
+		v <- as.raw(sample.int(256L, n, replace=TRUE))
+		fd1 <- sample(v, 1L)
+		fd2 <- sample(v, 1L)
+
+		n1 <- SeqArray:::.cfunction4("test_int8_count2")(v, st, fd1, fd2)
+		n2 <- c(sum(v[st:length(v)] == fd1), sum(v[st:length(v)] == fd2))
+		checkEquals(n1, n2, paste0("i8_count2 (start=", st, ")"))
+	}
+
+	invisible()
+}
+
+
+test_int_count3 <- function()
+{
+	set.seed(5000)
+	for (st in sample.int(1000L, 25L))
+	{
+		n <- 50000L + sample.int(64L, 1L) - 1L
+		v <- sample.int(256L, n, replace=TRUE)
+		fd1 <- sample(v, 1L)
+		fd2 <- sample(v, 1L)
+		fd3 <- sample(v, 1L)
+
+		n1 <- SeqArray:::.cfunction5("test_int32_count3")(v, st, fd1, fd2, fd3)
+		v <- v[st:length(v)]
+		n2 <- c(sum(v==fd1), sum(v==fd2), sum(v==fd3))
+		checkEquals(n1, n2, paste0("int_count3 (start=", st, ")"))
+	}
+
+	invisible()
+}
+
+
+test_i8_count3 <- function()
+{
+	set.seed(5000)
+	for (st in sample.int(1000L, 25L))
+	{
+		n <- 50000L + sample.int(64L, 1L) - 1L
+		v <- as.raw(sample.int(256L, n, replace=TRUE))
+		fd1 <- sample(v, 1L)
+		fd2 <- sample(v, 1L)
+		fd3 <- sample(v, 1L)
+
+		n1 <- SeqArray:::.cfunction5("test_int8_count3")(v, st, fd1, fd2, fd3)
+		v <- v[st:length(v)]
+		n2 <- c(sum(v==fd1), sum(v==fd2), sum(v==fd3))
+		checkEquals(n1, n2, paste0("i8_count3 (start=", st, ")"))
 	}
 
 	invisible()

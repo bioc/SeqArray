@@ -53,27 +53,22 @@ COREARRAY_DLL_EXPORT SEXP FC_SNP2GDS(SEXP Geno)
 // ======================================================================
 
 /// Calculate the missing rate per variant
-COREARRAY_DLL_EXPORT SEXP FC_NumAllele(SEXP AlleleStr)
-{
-	return ScalarInteger(GetNumOfAllele(CHAR(STRING_ELT(AlleleStr, 0))));
-}
-
-
-// ======================================================================
-
-/// Calculate the missing rate per variant
 COREARRAY_DLL_EXPORT SEXP FC_Missing_PerVariant(SEXP Geno)
 {
-	size_t n = XLENGTH(Geno);
-	size_t m = vec_i32_count(INTEGER(Geno), n, NA_INTEGER);
+	size_t n = XLENGTH(Geno), m;
+	if (TYPEOF(Geno) == RAWSXP)
+		m = vec_i8_count((char*)RAW(Geno), n, NA_RAW);
+	else
+		m = vec_i32_count(INTEGER(Geno), n, NA_INTEGER);
 	return ScalarReal((n > 0) ? (double(m) / n) : R_NaN);
 }
 
 /// Calculate the missing rate per sample
 COREARRAY_DLL_EXPORT SEXP FC_Missing_PerSample(SEXP Geno, SEXP sum)
 {
-	int *pdim = INTEGER(getAttrib(Geno, R_DimSymbol));
+	int *pdim = INTEGER(GET_DIM(Geno));
 	int num_ploidy=pdim[0], num_sample=pdim[1];
+
 	int *pG = INTEGER(Geno);
 	int *pS = INTEGER(sum);
 
@@ -95,34 +90,74 @@ COREARRAY_DLL_EXPORT SEXP FC_Missing_PerSample(SEXP Geno, SEXP sum)
 /// Get a list of allele frequencies
 COREARRAY_DLL_EXPORT SEXP FC_AF_List(SEXP List)
 {
-	int nAllele = GetNumOfAllele(CHAR(STRING_ELT(VECTOR_ELT(List, 1), 0)));
+	SEXP Geno = VECTOR_ELT(List, 0);
+	const size_t N = XLENGTH(Geno);
+
+	int nAllele = Rf_asInteger(VECTOR_ELT(List, 1));
 	SEXP rv = NEW_NUMERIC(nAllele);
 	double *pV = REAL(rv);
-	memset((void*)pV, 0, sizeof(double)*nAllele);
 
-	SEXP Geno = VECTOR_ELT(List, 0);
-	int *p = INTEGER(Geno);
-	int num = 0;
-
-	for (size_t n=XLENGTH(Geno); n > 0; n--)
+	size_t n1, n2, n3;
+	switch (nAllele)
 	{
-		int g = *p ++;
-		if (g != NA_INTEGER)
+	case 2:
+		if (TYPEOF(Geno) == RAWSXP)
+			vec_i8_count3((const char*)RAW(Geno), N, 0, 1, NA_RAW, &n1, &n2, &n3);
+		else
+			vec_i32_count3(INTEGER(Geno), N, 0, 1, NA_INTEGER, &n1, &n2, &n3);
+		n3 = N - n3;
+		if (n3 > 0)
 		{
-			if ((0 <= g) && (g < nAllele))
-			{
-				num ++; pV[g] ++;
-			} else
-				warning("Invalid value in 'genotype/data'.");
-		}
-	}
+			pV[0] = (double)n1 / n3;
+			pV[1] = (double)n2 / n3;
+		} else
+			pV[0] = pV[1] = R_NaN;
+		break;
 
-	if (num > 0)
-	{
-		const double scale = 1.0 / num;
-		for (; (nAllele--) > 0;) (*pV++) *= scale;
-	} else {
-		for (; (nAllele--) > 0;) (*pV++) = R_NaN;
+	case 1:
+		if (TYPEOF(Geno) == RAWSXP)
+			vec_i8_count2((const char*)RAW(Geno), N, 0, NA_RAW, &n1, &n2);
+		else
+			vec_i32_count2(INTEGER(Geno), N, 0, NA_INTEGER, &n1, &n2);
+		n2 = N - n2;
+		pV[0] = (n2 > 0) ? (double)n1 / n2 : R_NaN;
+		break;
+
+	default:
+		int num = 0;
+		memset((void*)pV, 0, sizeof(double)*nAllele);
+		if (TYPEOF(Geno) == RAWSXP)
+		{
+			C_UInt8 *p = (C_UInt8*)RAW(Geno);
+			for (size_t n=N; n > 0; n--)
+			{
+				C_UInt8 g = *p++;
+				if (g != NA_RAW)
+				{
+					num ++;
+					if (g < nAllele) pV[g] ++;
+				}
+			}
+		} else {
+			int *p = INTEGER(Geno);
+			for (size_t n=N; n > 0; n--)
+			{
+				int g = *p++;
+				if (g != NA_INTEGER)
+				{
+					num ++;
+					if ((0 <= g) && (g < nAllele))
+						pV[g] ++;
+				}
+			}
+		}
+		if (num > 0)
+		{
+			const double scale = 1.0 / num;
+			for (; (nAllele--) > 0;) (*pV++) *= scale;
+		} else {
+			for (; (nAllele--) > 0;) (*pV++) = R_NaN;
+		}
 	}
 
 	return rv;
@@ -153,7 +188,7 @@ COREARRAY_DLL_EXPORT SEXP FC_AF_SetIndex(SEXP RefIndex)
 COREARRAY_DLL_EXPORT SEXP FC_AF_Index(SEXP List)
 {
 	SEXP Geno = VECTOR_ELT(List, 0);
-	const int nAllele = GetNumOfAllele(CHAR(STRING_ELT(VECTOR_ELT(List, 1), 0)));
+	const int nAllele = Rf_asInteger(VECTOR_ELT(List, 1));
 
 	const size_t N = XLENGTH(Geno);
 	size_t n = 0, m = 0;
@@ -162,7 +197,10 @@ COREARRAY_DLL_EXPORT SEXP FC_AF_Index(SEXP List)
 
 	if (A < nAllele)
 	{
-		vec_i32_count2(INTEGER(Geno), N, A, NA_INTEGER, &m, &n);
+		if (TYPEOF(Geno) == RAWSXP)
+			vec_i8_count2((const char*)RAW(Geno), N, A, NA_RAW, &m, &n);
+		else
+			vec_i32_count2(INTEGER(Geno), N, A, NA_INTEGER, &m, &n);
 		n = N - n;
 	}
 
@@ -189,7 +227,14 @@ COREARRAY_DLL_EXPORT SEXP FC_AF_Allele(SEXP List)
 	if (A >= 0)
 	{
 		const size_t N = XLENGTH(Geno);
-		vec_i32_count2(INTEGER(Geno), N, A, NA_INTEGER, &m, &n);
+		if (TYPEOF(Geno) == RAWSXP)
+		{
+			if (A < 255)
+				vec_i8_count2((const char*)RAW(Geno), N, A, NA_RAW, &m, &n);
+			else
+				n = N;
+		} else
+			vec_i32_count2(INTEGER(Geno), N, A, NA_INTEGER, &m, &n);
 		n = N - n;
 	}
 
@@ -240,23 +285,47 @@ COREARRAY_DLL_EXPORT SEXP FC_AlleleStr2(SEXP allele)
 COREARRAY_DLL_EXPORT SEXP FC_AlleleCount(SEXP List)
 {
 	SEXP Geno = VECTOR_ELT(List, 0);
-	int *p = INTEGER(Geno);
-	int nAllele = GetNumOfAllele(CHAR(STRING_ELT(VECTOR_ELT(List, 1), 0)));
+	const size_t N = XLENGTH(Geno);
 
+	int nAllele = Rf_asInteger(VECTOR_ELT(List, 1));
 	SEXP rv = NEW_INTEGER(nAllele);
 	int *pV = INTEGER(rv);
-	memset((void*)pV, 0, sizeof(int)*nAllele);
 
-	for (size_t n=XLENGTH(Geno); n > 0; n--)
+	size_t n1, n2;
+	switch (nAllele)
 	{
-		int g = *p ++;
-		if (g != NA_INTEGER)
+	case 2:
+		if (TYPEOF(Geno) == RAWSXP)
+			vec_i8_count2((const char*)RAW(Geno), N, 0, 1, &n1, &n2);
+		else
+			vec_i32_count2(INTEGER(Geno), N, 0, 1, &n1, &n2);
+		pV[0] = n1; pV[1] = n2;
+		break;
+
+	case 1:
+		if (TYPEOF(Geno) == RAWSXP)
+			pV[0] = vec_i8_count((const char*)RAW(Geno), N, 0);
+		else
+			pV[0] = vec_i32_count(INTEGER(Geno), N, 0);
+		break;
+
+	default:
+		memset((void*)pV, 0, sizeof(int)*nAllele);
+		if (TYPEOF(Geno) == RAWSXP)
 		{
-			if ((0 <= g) && (g < nAllele))
+			C_UInt8 *p = (C_UInt8*)RAW(Geno);
+			for (size_t n=N; n > 0; n--)
 			{
-				pV[g] ++;
-			} else
-				warning("Invalid value in 'genotype/data'.");
+				C_UInt8 g = *p++;
+				if (g < nAllele) pV[g] ++;
+			}
+		} else {
+			int *p = INTEGER(Geno);
+			for (size_t n=N; n > 0; n--)
+			{
+				int g = *p++;
+				if ((0 <= g) && (g < nAllele)) pV[g] ++;
+			}
 		}
 	}
 
