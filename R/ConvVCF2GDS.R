@@ -159,7 +159,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
                         stop("No '", check.name[i], "'.")
                     a <- NA_character_
                 } else
-                    a <- v[i,2L]
+                    a <- v[j,2L]
 
                 ans[[ check.name[i] ]] <- a
             }
@@ -527,7 +527,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             cat(sprintf("        %s (%s)\n", basename(vcf.fn),
                 .pretty_size(file.size(vcf.fn))), sep="")
         } else {
-            cat("    connection object:\n")
+            cat("    [connection object]\n")
         }
         cat("    file format: ", header$fileformat, "\n", sep="")
         cat("    the number of sets of chromosomes (ploidy): ",

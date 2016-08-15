@@ -29,6 +29,7 @@
 
 #include "ReadByVariant.h"
 #include "ReadBySample.h"
+#include <ctype.h>
 
 
 
@@ -965,6 +966,49 @@ COREARRAY_DLL_EXPORT SEXP SEQ_IntAssign(SEXP Dst, SEXP Src)
 }
 
 
+inline static void CvtDNAString(char *p)
+{
+	char c;
+	while ((c = *p))
+	{
+		c = toupper(c);
+		if (c!='A' && c!='C' && c!='G' && c!='T' && c!='M' && c!='R' &&
+			c!='W' && c!='S' && c!='Y' && c!='K' && c!='V' && c!='H' &&
+			c!='D' && c!='B' && c!='N' && c!='-' && c!='+' && c!='.')
+		{
+			c = '.';
+		}
+		*p++ = c;
+	}
+}
+
+COREARRAY_DLL_EXPORT SEXP SEQ_DNAStrSet(SEXP x)
+{
+	if (Rf_isVectorList(x))
+	{
+		size_t nlen = XLENGTH(x);	
+		for (size_t i=0; i < nlen; i++)
+		{
+			SEXP s = VECTOR_ELT(x, i);
+			if (Rf_isString(s))
+			{
+				size_t n = XLENGTH(s);
+				for (size_t j=0; j < n; j++)
+					CvtDNAString((char*)CHAR(STRING_ELT(s, j)));
+			}
+		}
+	} else if (Rf_isString(x))
+	{
+		size_t n = XLENGTH(x);
+		for (size_t i=0; i < n; i++)
+			CvtDNAString((char*)CHAR(STRING_ELT(x, i)));
+	}
+	
+	return x;
+}
+
+
+
 // ===========================================================
 // get system configuration
 // ===========================================================
@@ -987,34 +1031,34 @@ COREARRAY_DLL_EXPORT SEXP SEQ_System()
 		// compiler flags
 		vector<string> ss;
 
-	#ifdef __SSE__
+	#ifdef COREARRAY_SIMD_SSE
 		ss.push_back("SSE");
 	#endif
-	#ifdef __SSE2__
+	#ifdef COREARRAY_SIMD_SSE2
 		ss.push_back("SSE2");
 	#endif
-	#ifdef __SSE3__
+	#ifdef COREARRAY_SIMD_SSE3
 		ss.push_back("SSE3");
 	#endif
-	#ifdef __SSSE3__
+	#ifdef COREARRAY_SIMD_SSSE3
 		ss.push_back("SSSE3");
 	#endif
-	#ifdef __SSE4_1__
+	#ifdef COREARRAY_SIMD_SSE4_1
 		ss.push_back("SSE4.1");
 	#endif
-	#ifdef __SSE4_2__
+	#ifdef COREARRAY_SIMD_SSE4_2
 		ss.push_back("SSE4.2");
 	#endif
-	#ifdef __AVX__
+	#ifdef COREARRAY_SIMD_AVX
 		ss.push_back("AVX");
 	#endif
-	#ifdef __AVX2__
+	#ifdef COREARRAY_SIMD_AVX2
 		ss.push_back("AVX2");
 	#endif
-	#ifdef __FMA__
+	#ifdef COREARRAY_SIMD_FMA
 		ss.push_back("FMA");
 	#endif
-	#ifdef __FMA4__
+	#ifdef COREARRAY_SIMD_FMA4
 		ss.push_back("FMA4");
 	#endif
 		SEXP SIMD = PROTECT(NEW_CHARACTER(ss.size()));
@@ -1104,7 +1148,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 		CALL(SEQ_ConvBEDFlag, 3),           CALL(SEQ_ConvBED2GDS, 5),
 		CALL(SEQ_SelectFlag, 2),
 
-		CALL(SEQ_IntAssign, 2),
+		CALL(SEQ_IntAssign, 2),             CALL(SEQ_DNAStrSet, 1),
 
 		{ NULL, NULL, 0 }
 	};
