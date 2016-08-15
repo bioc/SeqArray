@@ -1,8 +1,10 @@
-CHANGES IN VERSION 1.13.0-1.13.3
+CHANGES IN VERSION 1.13.0-1.13.4
 -------------------------
 
+    o the version number was bumped for the Bioconductor development version
 
-CHANGES IN VERSION 1.12.0-1.12.4
+
+CHANGES IN VERSION 1.12.0-1.12.6
 -------------------------
 
     o the version number was bumped for the Bioconductor release version 3.3
@@ -12,6 +14,11 @@ CHANGES IN VERSION 1.12.0-1.12.4
 
     o "$num_allele" is allowed in `seqGetData()` and `seqApply()` (the numbers
       of distinct alleles)
+
+    o a new option '.progress' in `seqAlleleFreq()`, `seqMissing()` and
+      `seqAlleleCount()`
+
+    o 'as.is' can be a `gdsn.class` object in `seqApply()`
 
 
 CHANGES IN VERSION 1.11.19-1.11.22

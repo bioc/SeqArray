@@ -37,25 +37,25 @@
 #include <stdint.h>
 #include <string.h>
 
-#if (defined(__SSE__) && defined(__SSE2__))
+#if defined(COREARRAY_SIMD_SSE) && defined(COREARRAY_SIMD_SSE2)
 
 #   include <xmmintrin.h>  // SSE
 #   include <emmintrin.h>  // SSE2
 
-#   if defined(__SSE3__)  // SSE3
+#   if defined(COREARRAY_SIMD_SSE3)  // SSE3
 #       include <pmmintrin.h>
 #   endif
 
-#   if defined(__SSSE3__)  // SSSE3
+#   if defined(COREARRAY_SIMD_SSSE3)  // SSSE3
 #       include <tmmintrin.h>
 #   endif
 
-#   if defined(__SSE4_2__) || defined(__POPCNT__)
+#   if defined(COREARRAY_SIMD_SSE4_2) || defined(__POPCNT__)
 #       define COREARRAY_HARDWARE_POPCNT
-#       include <nmmintrin.h>  // SSE4_2, for POPCNT
+#       include <nmmintrin.h>  // COREARRAY_SIMD_SSE4_2, for POPCNT
 #   endif
 
-#   if defined(__AVX__) || defined(__AVX2__)
+#   if defined(COREARRAY_SIMD_AVX) || defined(COREARRAY_SIMD_AVX2)
 #       include <immintrin.h>  // AVX, AVX2
 #   endif
 
@@ -197,15 +197,15 @@ inline static int POPCNT_U64(uint64_t x)
 
 // ===========================================================
 
-#ifdef __SSE__
+#ifdef COREARRAY_SIMD_SSE
 
-#   ifdef __SSE3__
+#   ifdef COREARRAY_SIMD_SSE3
 #       define MM_LOADU_128(p)    _mm_lddqu_si128((__m128i const*)(p))
 #   else
 #       define MM_LOADU_128(p)    _mm_loadu_si128((__m128i const*)(p))
 #   endif
 
-#   ifdef __SSE2__
+#   ifdef COREARRAY_SIMD_SSE2
 #       define MM_BLEND_128(a, b, mask)  \
 		    _mm_or_si128(_mm_and_si128(mask, a), _mm_andnot_si128(mask, b))
 #   endif
@@ -213,11 +213,13 @@ inline static int POPCNT_U64(uint64_t x)
 #endif
 
 
-#ifdef __AVX__
+#ifdef COREARRAY_SIMD_AVX
 
 #   define MM_LOADU_256(p)    _mm256_loadu_si256((__m256i const *)(p))
+#   define MM_SET_M128(v1, v0)    \
+        _mm256_insertf128_si256(_mm256_castsi128_si256(v0), (v1), 1)
 
-#   ifdef __AVX2__
+#   ifdef COREARRAY_SIMD_AVX2
 #       define MM_BLEND_256(a, b, mask)  \
 		    _mm256_or_si256(_mm256_and_si256(mask, a), _mm256_andnot_si256(mask, b))
 #   endif
@@ -243,12 +245,9 @@ inline static int POPCNT_U64(uint64_t x)
 	}
 	inline static int vec_sum_u8(__m128i s)
 	{
-		const __m128i zeros = _mm_setzero_si128();
-		__m128i u16 = _mm_add_epi16(_mm_unpacklo_epi8(s, zeros),
-				_mm_unpackhi_epi8(s, zeros));
-		__m128i u32 = _mm_add_epi32(_mm_unpacklo_epi16(u16, zeros),
-				_mm_unpackhi_epi16(u16, zeros));
-		return vec_sum_i32(u32);
+		s = _mm_sad_epu8(s, _mm_setzero_si128());
+		s = _mm_add_epi32(s, _mm_shuffle_epi32(s, 2));
+		return _mm_cvtsi128_si32(s);
 	}
 #endif
 
@@ -272,12 +271,9 @@ inline static int POPCNT_U64(uint64_t x)
 	}
 	inline static int vec_avx_sum_u8(__m256i s)
 	{
-		const __m256i zeros = _mm256_setzero_si256();
-		__m256i u16 = _mm256_add_epi16(_mm256_unpacklo_epi8(s, zeros),
-				_mm256_unpackhi_epi8(s, zeros));
-		__m256i u32 = _mm256_add_epi32(_mm256_unpacklo_epi16(u16, zeros),
-				_mm256_unpackhi_epi16(u16, zeros));
-		return vec_avx_sum_i32(u32);
+		s = _mm256_sad_epu8(s, _mm256_setzero_si256());
+		s = _mm256_add_epi64(s, _mm256_permute4x64_epi64(s, _MM_SHUFFLE(1,0,3,2)));
+		return _mm256_extract_epi32(s,0) + _mm256_extract_epi32(s,2);
 	}
 #endif
 
@@ -318,6 +314,15 @@ COREARRAY_DLL_DEFAULT void vec_i8_cnt_dosage2(const int8_t *p,
 
 
 // ===========================================================
+// functions for uint8
+// ===========================================================
+
+/// shifting *p right by 2 bits, assuming p is 2-byte aligned
+COREARRAY_DLL_DEFAULT void vec_u8_shr_b2(uint8_t *p, size_t n);
+
+
+
+// ===========================================================
 // functions for int16
 // ===========================================================
 
@@ -354,6 +359,8 @@ COREARRAY_DLL_DEFAULT void vec_i32_cnt_dosage2(const int32_t *p,
 	int32_t *out, size_t n, int32_t val, int32_t missing,
 	int32_t missing_substitute);
 
+/// shifting *p right by 2 bits, assuming p is 4-byte aligned
+COREARRAY_DLL_DEFAULT void vec_i32_shr_b2(int32_t *p, size_t n);
 
 
 

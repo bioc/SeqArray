@@ -3,7 +3,7 @@
 \title{Apply Functions Over Array Margins}
 \description{
     Returns a vector or list of values obtained by applying a function to
-margins of arrays or matrices.
+margins of genotypes and annotations.
 }
 \usage{
 seqApply(gdsfile, var.name, FUN, margin=c("by.variant", "by.sample"),
@@ -18,7 +18,8 @@ seqApply(gdsfile, var.name, FUN, margin=c("by.variant", "by.sample"),
     \item{margin}{giving the dimension which the function will be applied
         over. E.g., for a matrix 1 indicates rows, 2 indicates columns}
     \item{as.is}{returned value: a list, an integer vector, etc;
-        \code{as.is} can be a \code{\link{connection}} object}
+        \code{as.is} can be a \code{\link{connection}} object, or a GDS node
+        \code{\link{gdsn.class}} object}
     \item{var.index}{if \code{"none"}, call \code{FUN(x, ...)} without variable
         index; if \code{"relative"} or \code{"absolute"}, add an argument to
         the user-defined function \code{FUN} like \code{FUN(index, x, ...)}
@@ -26,8 +27,10 @@ seqApply(gdsfile, var.name, FUN, margin=c("by.variant", "by.sample"),
         \code{margin = "by.variant"}: \code{"relative"} for indexing in the
         selection defined by \code{\link{seqSetFilter}}, \code{"absolute"}
         for indexing with respect to all data}
-    \item{.useraw}{use RAW instead of INTEGER for genotypes and dosages}
-    \item{.progress}{if TRUE, show progress information}
+    \item{.useraw}{\code{TRUE}, force to use RAW instead of INTEGER for
+        genotypes and dosages; \code{FALSE}, use INTEGER; \code{NA}, use RAW
+        instead of INTEGER if possible}
+    \item{.progress}{if \code{TRUE}, show progress information}
     \item{.list_dup}{internal use only}
     \item{...}{optional arguments to \code{FUN}}
 }

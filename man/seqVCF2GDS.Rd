@@ -17,10 +17,10 @@ seqVCF2GDS(vcf.fn, out.fn, header=NULL, storage.option="ZIP_RA",
     \item{out.fn}{the file name of output GDS file}
     \item{header}{if NULL, \code{header} is set to be
         \code{\link{seqVCF_Header}(vcf.fn)}}
-    \item{storage.option}{specify the storage and compression options,
-        by default \code{\link{seqStorageOption}("ZIP_RA")}; or
-        \code{"LZMA_RA"} to use LZMZ compression algorithm with higher
-        compression ratio}
+    \item{storage.option}{specify the storage and compression option,
+        "ZIP_RA" (\code{\link{seqStorageOption}("ZIP_RA")}) by default; or
+        "LZMA_RA" to use LZMA compression algorithm with higher compression
+        ratio}
     \item{info.import}{characters, the variable name(s) in the INFO field
         for import; or \code{NULL} for all variables}
     \item{fmt.import}{characters, the variable name(s) in the FORMAT field
@@ -41,8 +41,8 @@ seqVCF2GDS(vcf.fn, out.fn, header=NULL, storage.option="ZIP_RA",
     \item{raise.error}{\code{TRUE}: throw an error if numeric conversion fails;
         \code{FALSE}: get missing value if numeric conversion fails}
     \item{digest}{a logical value (TRUE/FALSE) or a character ("md5", "sha1",
-        "sha256", "sha384" or "sha512"); add hash codes to the GDS file if TRUE
-        or a digest algorithm is specified}
+        "sha256", "sha384" or "sha512"); add md5 hash codes to the GDS file
+        if TRUE or a digest algorithm is specified}
     \item{parallel}{\code{FALSE} (serial processing), \code{TRUE} (parallel
         processing), a numeric value indicating the number of cores, or a
         cluster object for parallel processing; \code{parallel} is passed to
@@ -54,16 +54,9 @@ seqVCF2GDS(vcf.fn, out.fn, header=NULL, storage.option="ZIP_RA",
     Return the file name of GDS format with an absolute path.
 }
 \details{
-    GDS -- Genomic Data Structures used for storing genetic array-oriented
-        data, and the file format defined in the \link{gdsfmt} package.
-
-    VCF -- The Variant Call Format (VCF), which is a generic format for
-        storing DNA polymorphism data such as SNPs, insertions, deletions and
-        structural variants, together with rich annotations.
-
     If there are more than one files in \code{vcf.fn}, \code{seqVCF2GDS} will
 merge all VCF files together if they contain the same samples. It is useful
-to merge multiple VCF files if data are divided by chromosomes.
+to merge multiple VCF files if variant data are split by chromosomes.
 
     The real numbers in the VCF file(s) are stored in 32-bit floating-point
 format by default. Users can set
@@ -83,6 +76,10 @@ compression ratio by \code{storage.option="ZIP_RA.max"} or
 \code{storage.option="LZMA_RA"} or
 \code{storage.option=seqStorageOption("LZMA_RA")}, and it is known to have
 higher compression ratio than zlib.
+
+    If multiple cores/processes are specified in \code{parallel}, all VCF files
+are scanned to calculate the total number of variants before format conversion.
+
 }
 \references{
     Danecek, P., Auton, A., Abecasis, G., Albers, C.A., Banks, E., DePristo,
