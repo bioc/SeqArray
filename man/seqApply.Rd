@@ -12,7 +12,7 @@ seqApply(gdsfile, var.name, FUN, margin=c("by.variant", "by.sample"),
     var.index=c("none", "relative", "absolute"), parallel=FALSE,
     .useraw=FALSE, .progress=FALSE, .list_dup=TRUE, ...)
 seqBlockApply(gdsfile, var.name, FUN, margin=c("by.variant"),
-    as.is=c("none", "list"), var.index=c("none", "relative", "absolute"),
+    as.is=c("none", "list", "unlist"), var.index=c("none", "relative", "absolute"),
     bsize=1024L, parallel=FALSE, .useraw=FALSE, .progress=FALSE,
     .list_dup=TRUE, ...)
 }
@@ -24,7 +24,9 @@ seqBlockApply(gdsfile, var.name, FUN, margin=c("by.variant"),
         over. E.g., for a matrix 1 indicates rows, 2 indicates columns}
     \item{as.is}{returned value: a list, an integer vector, etc;
         \code{as.is} can be a \code{\link{connection}} object, or a GDS node
-        \code{\link{gdsn.class}} object}
+        \code{\link{gdsn.class}} object; if "unlist" is used, produces a vector
+        which contains all the atomic components, via
+        \code{unlist(..., recursive=FALSE)}}
     \item{var.index}{if \code{"none"}, call \code{FUN(x, ...)} without variable
         index; if \code{"relative"} or \code{"absolute"}, add an argument to
         the user-defined function \code{FUN} like \code{FUN(index, x, ...)}
@@ -51,7 +53,8 @@ seqBlockApply(gdsfile, var.name, FUN, margin=c("by.variant"),
 \code{"annotation/info/VARIABLE_NAME"}, or
 \code{"annotation/format/VARIABLE_NAME"}.
 
-\code{"$dosage"} is also allowed for the dosages of reference allele.
+\code{"$dosage"} is also allowed for the dosages of reference allele (integer:
+0, 1, 2 and NA for diploid genotypes).
 
 \code{"$num_allele"} returns an integer vector with the numbers of distinct
 alleles.
@@ -66,7 +69,7 @@ the high-speed memory instead of disk.
 \author{Xiuwen Zheng}
 \seealso{
     \code{\link{seqSetFilter}}, \code{\link{seqGetData}},
-    \code{\link{seqParallel}}
+    \code{\link{seqParallel}}, \code{\link{seqGetParallel}}
 }
 
 \examples{
@@ -99,6 +102,7 @@ seqApply(f, "genotype", FUN=print, margin="by.sample", .useraw=TRUE)
 # read in block
 seqGetData(f, "$dosage")
 seqBlockApply(f, "$dosage", print, bsize=3)
+seqBlockApply(f, "$dosage", function(x) x, as.is="list", bsize=3)
 seqBlockApply(f, c(dos="$dosage", pos="position"), print, bsize=3)
 
 
