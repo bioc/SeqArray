@@ -1,7 +1,7 @@
 ---
 title: "Integration with R"
 author: "Xiuwen Zheng (Department of Biostatistics, University of Washington, Seattle)"
-date: "Jul 25, 2016"
+date: "Aug 31, 2016"
 output:
   html_document:
     theme: spacelab
@@ -31,6 +31,10 @@ The SeqArray package is designed for R programming environment, and enables high
 
 .
 
+```{r echo=FALSE}
+options(width=110)
+```
+
 ```{r}
 library(SeqArray)
 
@@ -58,20 +62,28 @@ seqSummary(file)
 
 # SeqArray Functions
 
+## Key R Functions
+
 **Table 1**: The key functions in the SeqArray package.
 
 | Function     | Description |
 |:-------------|:-------------------------------------------|
-| seqVCF2GDS   | Reformats VCF files. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqVCF2GDS.html)  |
-| seqSetFilter | Defines a data subset of samples or variants. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqSetFilter.html)  |
-| seqGetData   | Gets data from a SeqArray file with a defined filter. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqGetData.html)  |
-| seqApply     | Applies a user-defined function over array margins. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqApply.html)  |
-| seqParallel  | Applies functions in parallel. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqParallel.html)  |
+| seqVCF2GDS   | Reformat VCF files. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqVCF2GDS.html)  |
+| seqSetFilter | Define a data subset of samples or variants. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqSetFilter.html)  |
+| seqGetData   | Get data from a SeqArray file with a defined filter. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqGetData.html)  |
+| seqApply     | Apply a user-defined function over array margins. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqApply.html)  |
+| seqParallel  | Apply functions in parallel. [![](link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqParallel.html)  |
+
+Genotypic data and annotations are stored in an array-oriented manner, providing efficient data access using the R programming language. Table 1 lists five key functions provided in the SeqArray package and many data analyses can be done using just these functions.
+
+`seqVCF2GDS()` converts VCF files to SeqArray format. Multiple cores in an SMP architecture within one or more compute nodes in a compute cluster can be used to simultaneously reformat the data. `seqVCF2GDS()` utilizes R's connection interface to read VCF files incrementally, and it is able to import data from http/ftp texts and the standard output of a command-line tool via a pipe.
+
+`seqSetFilter()` and `seqGetData()` can be used together to retrieve data for a selected set of samples from a defined genomic region. `GRanges` and `GRangesList` objects defined in the Bioconductor core packages are supported via `seqSetFilter()` [@Gentleman:2004aa; @Lawrence2013].
+
+`seqApply()` applies a user-defined function to array margins of genotypes and annotations. The function that is applied can be defined in R as is typical, or via C/C++ code using the Rcpp package [@eddelbuettel2011rcpp]. `seqParallel()` utilizes the facilities in the parallel package [@Rossini2007; @R2016] to perform calculations on a SeqArray file in parallel.
 
 
-## Application Program Interface (API)
-
-Genotypic data and annotations are stored in an array-oriented manner, providing efficient data access using the R programming language. There are five key functions in SeqArray as shown in Table 1, and many of data analyses can be done using just these functions.
+## Calculating Allele Frequencies
 
 We illustrate the SeqArray functions by implementing an example to calculate the frequency of reference allele across all chromosomes. If a genomic region is specified via `seqSetFilter()`, the calculation is performed within the region instead of using all variants. `seqApply()` enables applying a user-defined function to the margin of genotypes, and the R code is shown as follows:
 ```{r}
@@ -108,14 +120,99 @@ head(af)
 ```
 The C++ integration is several times faster than the R implementation, suggesting an efficient approach with C/C++ when real-time performance is required.
 
-`seqParallel()` utilizes the facilities offered by the parallel package to perform calculations with a cluster environment. The genotypes on a SeqArray file are automatically split into non-overlapping parts according to different variants or samples, and the results from client R processes are collected internally.
+It is able to run the calculation in parallel. The genotypes of a SeqArray file are automatically split into non-overlapping parts according to different variants or samples, and the results from client processes collected internally:
 ```{r}
-af <- seqParallel(cl=2, file, FUN = function(f) {
-    seqApply(f, "genotype", as.is="double", FUN=function(x) { mean(x==0L, na.rm=TRUE) })
-}, split="by.variant")
+af <- seqApply(file, "genotype", as.is="double",
+    margin="by.variant", FUN=function(x) { mean(x==0L, na.rm=TRUE) }, parallel=2)
 head(af)
 ```
-where the argument `cl` specifies the number of cores, the user-defined function `function(f) {...}` is distributed to 2 different computing cores, and `split` indicates dividing genotypes according to different variants.
+Here `parallel` specifies the number of cores.
+
+
+## PCA R Implementation
+
+Principal Component Analysis (PCA) is a common tool used in exploratory data analysis for high-dimensional data. PCA is often involved with the calculation of covariance matrix, and the following R code implements the calculation proposed in [@Patterson:2006:PLoS-Genet:17194218]. The user-defined function computes the covariance matrix for each variant and adds up to a total matrix `s`. The argument `.progress=TRUE` enables the display of progress information during the calculation.
+```R
+# covariance variable with an initial value
+s <- 0
+
+seqApply(f, "$dosage", function(x)
+    {
+        p <- 0.5 * mean(x, na.rm=TRUE)      # allele frequency
+        g <- (x - 2*p) / sqrt(p*(1-p))      # normalized by allele frequency
+        g[is.na(g)] <- 0                    # correct missing values
+        s <<- s + (g %o% g)                 # update the cov matrix s in the parent environment
+    }, margin="by.variant", .progress=TRUE)
+
+# scaled by the number of samples over the trace
+s <- s * (nrow(s) / sum(diag(s)))
+
+# eigen-decomposition
+eig <- eigen(s)
+```
+
+```
+[..................................................]  0%, ETC: --- 
+[=>................................................]  2%, ETC: 5.4m
+...
+[==================================================] 100%, ETC: 0s
+```
+
+```R
+# covariance variable with an initial value
+s <- 0
+
+seqBlockApply(file, "$dosage", function(x)
+    {
+        p <- 0.5 * colMeans(x, na.rm=TRUE)     # allele frequencies (a vector)
+        g <- (t(x) - 2*p) / sqrt(p*(1-p))      # normalized by allele frequency
+        g[is.na(g)] <- 0                       # correct missing values
+        s <<- s + crossprod(g)                 # update the cov matrix s in the parent environment
+    }, margin="by.variant", .progress=TRUE)
+
+# scaled by the number of samples over the trace
+s <- s * (nrow(s) / sum(diag(s)))
+
+# eigen-decomposition
+eig <- eigen(s)
+```
+```
+[..................................................]  0%, ETC: ---
+[==================>...............................] 35%, ETC: 9s
+[======================================>...........] 75%, ETC: 3s
+[==================================================] 100%, ETC: 0s
+```
+
+`seqParallel()` utilizes the facilities offered by the R parallel package to perform calculations within a cluster or SMP environment, and the genotypes are automatically split into non-overlapping parts. The parallel implementation with R is shown as follows, and the C optimized function is also available in the SNPRelate package.
+
+```{r}
+# the datasets are automatically split into four non-overlapping parts
+genmat <- seqParallel(2, file, FUN = function(f)
+    {
+        s <- 0  # covariance variable with an initial value
+        seqBlockApply(f, "$dosage", function(x)
+            {
+                p <- 0.5 * colMeans(x, na.rm=TRUE)     # allele frequencies (a vector)
+                g <- (t(x) - 2*p) / sqrt(p*(1-p))      # normalized by allele frequency
+                g[is.na(g)] <- 0                       # correct missing values
+                s <<- s + crossprod(g)                 # update the cov matrix s in the parent environment
+            }, margin="by.variant")
+        s  # output
+    }, .combine = "+",    # sum "s" of different processes together
+    split = "by.variant")
+
+# scaled by the number of samples over the trace
+genmat <- genmat * (nrow(genmat) / sum(diag(genmat)))
+
+# eigen-decomposition
+eig <- eigen(genmat)
+```
+
+```{r fig.width=5, fig.height=5, fig.align='center'}
+# figure
+plot(eig$vectors[,1], eig$vectors[,2], xlab="PC 1", ylab="PC 2")
+```
+
 
 More examples can be found: [SeqArray Data Format and Access](./SeqArrayTutorial.html#examples)
 
@@ -152,7 +249,64 @@ seqParallelSetup(FALSE)
 
 .
 
+# Bioconductor Features
 
+## GRanges and GRangesList
+
+In this section, we illustrate how to work with Bioconductor core packages for performing common queries to retrieve data from a SeqArray file. The `GRanges` and `GRangesList` classes manipulate genomic range data and can be used in the function `seqSetFilter()` to define a data subset. For example, the annotation information of each exon, the coding range and transcript ID are stored in the `TxDb.Hsapiens.UCSC.hg19.knownGene` object for the UCSC known gene annotations on hg19.
+```{r message=FALSE}
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+```
+```{r}
+# get the exons grouped by gene
+txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+txs <- exonsBy(txdb, "gene")
+```
+where `exonsBy()` returns a `GRangesList` object for all known genes in the database.
+
+```{r}
+seqSetFilter(file, txs)  # define an exon filter
+
+# VCF export with exon variants
+seqGDS2VCF(file, "exons.vcf.gz")
+```
+If random-access memory is sufficiently large, users could load all exon variants via `seqGetData(file, "genotype")`; otherwise, data have to be loaded by chunk or a user-defined function is applied over variants by `seqApply()`.
+
+
+## VariantAnnotation
+
+SeqArray can also export data with selected variants and samples as a `VCF` object for use with the VariantAnnotation package [@Obenchain2014]:
+```{r message=FALSE}
+library(VariantAnnotation)
+```
+```{r}
+# select a region [10Mb, 30Mb] on chromosome 22
+seqSetFilterChrom(file, 22, from.bp=10000000, to.bp=30000000)
+
+vcf <- asVCF(file, chr.prefix="chr")
+vcf
+
+locateVariants(vcf, txdb, CodingVariants())
+```
+
+
+```{r echo=FALSE}
+unlink("exons.vcf.gz", force=TRUE)
+```
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
 
 # Integration with SeqVarTools
 
@@ -211,10 +365,9 @@ head(res)
 .
 
 
-
 # Integration with SNPRelate
 
-Parallel implementations of relatedness and principal component analysis with SeqArray format are enabled in the package SNPRelate, to detect and adjust for population structure and cryptic relatedness in association studies. The kernel of SNPRelate was optimized with SIMD instructions and multi-thread algorithms, and it was designed for bi-allelic SNP data originally [@Zheng:2012:Bioinformatics:23060615]. In order to analyze sequence variant calls, and SNPRelate has been rewritten to take the dosages of reference alleles as an input genotype matrix with distinct integers 0, 1, 2 and NA for SeqArray files. Therefore no format conversion is required for WGS analyses.
+Parallel implementations of relatedness and principal component analysis with SeqArray format are enabled in the package SNPRelate, to detect and adjust for population structure and cryptic relatedness in association studies. The kernel of SNPRelate was optimized with SIMD instructions and multi-thread algorithms, and it was designed for bi-allelic SNP data originally [@Zheng2012]. In order to analyze sequence variant calls, and SNPRelate has been rewritten to take the dosages of reference alleles as an input genotype matrix with distinct integers 0, 1, 2 and NA for SeqArray files. Therefore no format conversion is required for WGS analyses.
 
 Principal component analysis is implemented in the SNPRelate function `snpgdsPCA()`, and the exact and new randomized algorithms are both provided [@Patterson:2006:PLoS-Genet:17194218; @Galinsky2016]. The randomized matrix algorithm is designed to reduce the running time for large number of study individuals (e.g., greater than 10,000 samples). Relatedness analyses include PLINK method of moment (MoM), KING robust methods, GCTA genetic relationship matrix (GRM) and individual-perspective beta estimator [@Purcell:2007:Am-J-Hum-Genet:17701901; @Manichaikul2010; @Yang2011; @weir2015snps], and these algorithms are computationally efficient and optimized with SIMD instructions. In addition, fixation index ($F_\text{st}$) has been widely used to measure the genetic difference between populations, and the calculations of moment estimators are available in the SNPRelate package with all variants or a sliding window [@Weir:1984:Evolution; @Weir:2002:Annu-Rev-Genet:12359738; @Weir2005].
 
@@ -363,75 +516,9 @@ abline(h=mean(sw$chr22.val), lty=3, col="red", lwd=2)
 
 .
 
-
-
-# Bioconductor Features
-
-## GRanges and GRangesList
-
-In this section, we illustrate how to work with Bioconductor core packages for performing common queries to retrieve data from a SeqArray file. The `GRanges` and `GRangesList` classes manipulate genomic range data and can be used in the function `seqSetFilter()` to define a data subset. For example, the annotation information of each exon, the coding range and transcript ID are stored in the `TxDb.Hsapiens.UCSC.hg19.knownGene` object for the UCSC known gene annotations on hg19.
-```{r message=FALSE}
-library(TxDb.Hsapiens.UCSC.hg19.knownGene)
-```
-```{r}
-# get the exons grouped by gene
-txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
-txs <- exonsBy(txdb, "gene")
-```
-where `exonsBy()` returns a `GRangesList` object for all known genes in the database.
-
-```{r}
-seqSetFilter(file, txs)  # define an exon filter
-
-# VCF export with exon variants
-seqGDS2VCF(file, "exons.vcf.gz")
-```
-If random-access memory is sufficiently large, users could load all exon variants via `seqGetData(file, "genotype")`; otherwise, data have to be loaded by chunk or a user-defined function is applied over variants by `seqApply()`.
-
-
-## VariantAnnotation
-
-SeqArray can also export data with selected variants and samples as a `VCF` object for use with the VariantAnnotation package [@Obenchain2014]:
-```{r message=FALSE}
-library(VariantAnnotation)
-```
-```{r}
-# select a region [10Mb, 30Mb] on chromosome 22
-seqSetFilterChrom(file, 22, from.bp=10000000, to.bp=30000000)
-
-vcf <- asVCF(file, chr.prefix="chr")
-vcf
-
-locateVariants(vcf, txdb, CodingVariants())
-```
-
-
-```{r}
-seqClose(file)
-```
-
-
-```{r echo=FALSE}
-unlink("exons.vcf.gz", force=TRUE)
-```
-
-.
-
-.
-
-.
-
-.
-
-.
-
-.
-
-.
-
 # GENESIS
 
-The [GENESIS](http://www.bioconductor.org/packages/GENESIS) package offers methodology for estimating, inferring and accounting for population and pedigree structure in genetic analyses. The current implementation provides functions to perform PC-AiR and PC-Relate [@Conomos2015;  @Conomos2016]. PC-AiR performs PCA on whole-genome genotypes taking into account known or cryptic relatedness in the study sample. PC-Relate uses ancestry representative principal components to accurately estimate measures of recent genetic relatedness. In addition, the development version of GENESIS supports for SeqArray files in mixed model association testing and introduce aggregate tests of rare variants including burden and sequence kernel association tests [@Wu2011].
+The [GENESIS](http://www.bioconductor.org/packages/GENESIS) package offers methodology for estimating and accounting for population and pedigree structure in genetic analyses. The current implementation provides functions to perform PC-AiR and PC-Relate [@Conomos2015;  @Conomos2016]. PC-AiR performs PCA on whole-genome genotypes taking into account known or cryptic relatedness in the study sample. PC-Relate uses ancestry representative principal components to accurately estimate measures of recent genetic relatedness. In addition, the development version of GENESIS includes support for SeqArray files in mixed model association testing and introduces aggregate tests of rare variants including burden and sequence kernel association tests [@Wu2011].
 
 .
 
@@ -458,11 +545,11 @@ The [GENESIS](http://www.bioconductor.org/packages/GENESIS) package offers metho
 # Session Information
 
 ```{r}
-sessionInfo()
+seqClose(file)
 ```
 
-```{r echo=FALSE}
-unlink("exons.vcf.gz", force=TRUE)
+```{r}
+sessionInfo()
 ```
 
 

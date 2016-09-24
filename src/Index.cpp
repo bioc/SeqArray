@@ -620,16 +620,13 @@ bool CVarApplyList::CallNext()
 // Progress object
 // ===========================================================
 
-static int Progress_ShowNum = 50;
-static int Progress_Line_Num = 100000;
+static const int PROGRESS_BAR_CHAR_NUM = 50;
+static const int PROGRESS_LINE_NUM = 100000;
 
-inline static void put_text(Rconnection conn, const char *fmt, ...)
-{
-	va_list args;
-	va_start(args, fmt);
-	(*conn->vfprintf)(conn, fmt, args);
-	va_end(args);
-}
+static const double S_MIN  =  60;
+static const double S_HOUR =  60 * S_MIN;
+static const double S_DAY  =  24 * S_HOUR;
+static const double S_YEAR = 365 * S_DAY;
 
 CProgress::CProgress(C_Int64 start, C_Int64 count, SEXP conn, bool newline)
 {
@@ -652,7 +649,7 @@ CProgress::CProgress(C_Int64 start, C_Int64 count, SEXP conn, bool newline)
 		percent = (double)Counter / count;
 	} else {
 		_start = _step = 0;
-		_hit = Progress_Line_Num;
+		_hit = PROGRESS_LINE_NUM;
 		percent = 0;
 	}
 
@@ -675,8 +672,9 @@ void CProgress::Forward()
 		{
 			_start += _step;
 			_hit = (C_Int64)(_start);
+			if (_hit > TotalCount) _hit = TotalCount;
 		} else {
-			_hit += Progress_Line_Num;
+			_hit += PROGRESS_LINE_NUM;
 		}
 		ShowProgress();
 	}
@@ -688,73 +686,80 @@ void CProgress::ShowProgress()
 	{
 		if (TotalCount > 0)
 		{
-			char ss[Progress_ShowNum + 1];
-			double percent = (double)Counter / TotalCount;
-			int n = (int)round(percent * Progress_ShowNum);
-			memset(ss, '.', sizeof(ss));
-			memset(ss, '=', n);
-			if (n < Progress_ShowNum) ss[n] = '>';
-			ss[Progress_ShowNum] = 0;
+			char bar[PROGRESS_BAR_CHAR_NUM + 1];
+			double p = (double)Counter / TotalCount;
+			int n = (int)round(p * PROGRESS_BAR_CHAR_NUM);
+			memset(bar, '.', sizeof(bar));
+			memset(bar, '=', n);
+			if ((Counter > 0) && (n < PROGRESS_BAR_CHAR_NUM))
+				bar[n] = '>';
+			bar[PROGRESS_BAR_CHAR_NUM] = 0;
 
 			// ETC: estimated time to complete
 			n = (int)_timer.size() - 20;  // 20% as a sliding window size
 			if (n < 0) n = 0;
 			time_t now; time(&now);
-			_timer.push_back(pair<double, time_t>(percent, now));
+			_timer.push_back(pair<double, time_t>(p, now));
 
-			double sec = difftime(now, _timer[n].second);
-			double diff = percent - _timer[n].first;
+			// in seconds
+			double s = difftime(now, _timer[n].second);
+			double diff = p - _timer[n].first;
 			if (diff > 0)
-				sec = sec / diff * (1 - percent);
+				s = s / diff * (1 - p);
 			else
-				sec = 999.9 * 60 * 60;
-			percent *= 100;
+				s = R_NaN;
+			p *= 100;
 
 			// show
 			if (NewLine)
 			{
-				if (sec < 60)
+				if (R_FINITE(s))
 				{
-					put_text(File, "[%s] %2.0f%%, ETC: %.0fs\n", ss,
-						percent, sec);
-				} else if (sec < 3600)
-				{
-					put_text(File, "[%s] %2.0f%%, ETC: %.1fm\n", ss,
-						percent, sec/60);
+					if (s < S_MIN)
+						ConnPutText(File, "[%s] %2.0f%%, ETC: %.0fs\n", bar, p, s);
+					else if (s < S_HOUR)
+						ConnPutText(File, "[%s] %2.0f%%, ETC: %.1fm\n", bar, p, s/S_MIN);
+					else if (s < S_DAY)
+						ConnPutText(File, "[%s] %2.0f%%, ETC: %.1fh\n", bar, p, s/S_HOUR);
+					else if (s < S_YEAR)
+						ConnPutText(File, "[%s] %2.0f%%, ETC: %.1fd\n", bar, p, s/S_DAY);
+					else
+						ConnPutText(File, "[%s] %2.0f%%, ETC: %.1f years\n", bar, p, s/S_YEAR);
 				} else {
-					put_text(File, "[%s] %2.0f%%, ETC: %.1fh\n", ss,
-						percent, sec/(60*60));
+					ConnPutText(File, "[%s] %2.0f%%, ETC: ---\n", bar, p);
 				}
 			} else {
-				if (sec < 60)
+				if (R_FINITE(s))
 				{
-					put_text(File, "\r[%s] %2.0f%%, ETC: %.0fs  ", ss,
-						percent, sec);
-				} else if (sec < 3600)
-				{
-					put_text(File, "\r[%s] %2.0f%%, ETC: %.1fm  ", ss,
-						percent, sec/60);
+					if (s < S_MIN)
+						ConnPutText(File, "\r[%s] %2.0f%%, ETC: %.0fs  ", bar, p, s);
+					else if (s < S_HOUR)
+						ConnPutText(File, "\r[%s] %2.0f%%, ETC: %.1fm  ", bar, p, s/S_MIN);
+					else if (s < S_DAY)
+						ConnPutText(File, "\r[%s] %2.0f%%, ETC: %.1fh  ", bar, p, s/S_HOUR);
+					else if (s < S_YEAR)
+						ConnPutText(File, "\r[%s] %2.0f%%, ETC: %.1fd  ", bar, p, s/S_DAY);
+					else
+						ConnPutText(File, "\r[%s] %2.0f%%, ETC: %.1f years", bar, p, s/S_YEAR);
 				} else {
-					put_text(File, "\r[%s] %2.0f%%, ETC: %.1fh  ", ss,
-						percent, sec/(60*60));
+					ConnPutText(File, "\r[%s] %2.0f%%, ETC: ---  ", bar, p);
 				}
-				if (Counter >= TotalCount)
-					put_text(File, "\n");
+				if (Counter >= TotalCount) ConnPutText(File, "\n");
 			}
 		} else {
-			int n = Counter / Progress_Line_Num;
+			int n = Counter / PROGRESS_LINE_NUM;
 			string s(n, '.');
 			if (NewLine)
 			{
 				if (Counter > 0)
-					put_text(File, "[:%s (%dk lines)]\n", s.c_str(), Counter/1000);
+					ConnPutText(File, "[:%s (%dk lines)]\n", s.c_str(), Counter/1000);
 				else
-					put_text(File, "[: (0 line)]\n");
+					ConnPutText(File, "[: (0 line)]\n");
 			} else {
 				if (Counter > 0)
-					put_text(File, "\r[:%s (%dk lines)]", s.c_str(), Counter/1000);
+					ConnPutText(File, "\r[:%s (%dk lines)]", s.c_str(), Counter/1000);
 				else
-					put_text(File, "\r[: (0 line)]");
+					ConnPutText(File, "\r[: (0 line)]");
 			}
 		}
 		(*File->fflush)(File);
@@ -776,47 +781,52 @@ void CProgressStdOut::ShowProgress()
 {
 	if (Verbose && (TotalCount > 0))
 	{
-		char ss[Progress_ShowNum + 1];
-		double percent = (double)Counter / TotalCount;
-		int n = (int)round(percent * Progress_ShowNum);
-		memset(ss, '.', sizeof(ss));
-		memset(ss, '=', n);
-		if (n < Progress_ShowNum) ss[n] = '>';
-		ss[Progress_ShowNum] = 0;
+		char bar[PROGRESS_BAR_CHAR_NUM + 1];
+		double p = (double)Counter / TotalCount;
+		int n = (int)round(p * PROGRESS_BAR_CHAR_NUM);
+		memset(bar, '.', sizeof(bar));
+		memset(bar, '=', n);
+		if ((Counter > 0) && (n < PROGRESS_BAR_CHAR_NUM))
+			bar[n] = '>';
+		bar[PROGRESS_BAR_CHAR_NUM] = 0;
 
 		// ETC: estimated time to complete
 		n = (int)_timer.size() - 20;  // 20% as a sliding window size
 		if (n < 0) n = 0;
 		time_t now; time(&now);
-		_timer.push_back(pair<double, time_t>(percent, now));
+		_timer.push_back(pair<double, time_t>(p, now));
 
-		double int_sec = difftime(now, _last_time);
-		double sec = difftime(now, _timer[n].second);
-		double diff = percent - _timer[n].first;
+		// in seconds
+		double interval = difftime(now, _last_time);
+		double s = difftime(now, _timer[n].second);
+		double diff = p - _timer[n].first;
 		if (diff > 0)
-			sec = sec / diff * (1 - percent);
+			s = s / diff * (1 - p);
 		else
-			sec = 999.9 * 60 * 60;
-		percent *= 100;
+			s = R_NaN;
+		p *= 100;
 
 		// show
 		if (Counter >= TotalCount)
 		{
-			Rprintf("\r[%s] 100%%, completed  \n", ss);
-		} else if ((int_sec >= 5) || (Counter <= 0))
+			Rprintf("\r[%s] 100%%, completed      \n", bar);
+		} else if ((interval >= 5) || (Counter <= 0))
 		{
 			_last_time = now;
-			if (sec < 60)
+			if (R_FINITE(s))
 			{
-				Rprintf("\r[%s] %2.0f%%, ETC: %.0fs  ", ss, percent, sec);
-			} else if (sec < 3600)
-			{
-				Rprintf("\r[%s] %2.0f%%, ETC: %.1fm  ", ss, percent, sec/60);
-			} else {
-				if (sec >= 999 * 60 * 60)
-					Rprintf("\r[%s] %2.0f%%, ETC: NA    ", ss, percent);
+				if (s < S_MIN)
+					Rprintf("\r[%s] %2.0f%%, ETC: %.0fs  ", bar, p, s);
+				else if (s < S_HOUR)
+					Rprintf("\r[%s] %2.0f%%, ETC: %.1fm  ", bar, p, s/S_MIN);
+				else if (s < S_DAY)
+					Rprintf("\r[%s] %2.0f%%, ETC: %.1fh  ", bar, p, s/S_HOUR);
+				else if (s < S_YEAR)
+					Rprintf("\r[%s] %2.0f%%, ETC: %.1fd  ", bar, p, s/S_DAY);
 				else
-					Rprintf("\r[%s] %2.0f%%, ETC: %.1fh  ", ss, percent, sec/(60*60));
+					Rprintf("\r[%s] %2.0f%%, ETC: %.1f years  ", bar, p, s/S_YEAR);
+			} else {
+				Rprintf("\r[%s] %2.0f%%, ETC: ---    ", bar, p);
 			}
 		}
 	}
@@ -836,6 +846,7 @@ COREARRAY_DLL_LOCAL size_t RLength(SEXP val)
 	return (!Rf_isNull(val)) ? XLENGTH(val) : 0;
 }
 
+
 COREARRAY_DLL_LOCAL SEXP RGetListElement(SEXP list, const char *name)
 {
 	SEXP elmt = R_NilValue;
@@ -851,6 +862,7 @@ COREARRAY_DLL_LOCAL SEXP RGetListElement(SEXP list, const char *name)
 	}
 	return elmt;
 }
+
 
 /// Allocate R object given by SVType
 COREARRAY_DLL_LOCAL SEXP RObject_GDS(PdAbstractArray Node, size_t n,
@@ -890,6 +902,42 @@ COREARRAY_DLL_LOCAL SEXP RObject_GDS(PdAbstractArray Node, size_t n,
 	return ans;
 }
 
+
+/// Append data to a GDS node
+COREARRAY_DLL_LOCAL void RAppendGDS(PdAbstractArray Node, SEXP Val)
+{
+	switch (TYPEOF(Val))
+	{
+	case LGLSXP:  // logical
+		GDS_Array_AppendData(Node, XLENGTH(Val), LOGICAL(Val), svInt32);
+		break;
+	case INTSXP:  // integer
+		GDS_Array_AppendData(Node, XLENGTH(Val), INTEGER(Val), svInt32);
+		break;
+	case REALSXP:  // numeric
+		GDS_Array_AppendData(Node, XLENGTH(Val), REAL(Val), svFloat64);
+		break;
+	case RAWSXP:  // RAW
+		GDS_Array_AppendData(Node, XLENGTH(Val), RAW(Val), svInt8);
+		break;
+	case STRSXP:  // character
+		{
+			R_xlen_t n = XLENGTH(Val);
+			vector<string> buf(n);
+			for (R_xlen_t i=0; i < n; i++)
+			{
+				SEXP s = STRING_ELT(Val, i);
+				if (s != NA_STRING) buf[i] = translateCharUTF8(s);
+			}
+			GDS_Array_AppendData(Node, n, &buf[0], svStrUTF8);
+		}
+		break;
+	default:
+		throw ErrSeqArray("the user-defined function should return a vector.");
+	}
+}
+
+
 COREARRAY_DLL_LOCAL C_BOOL *NeedArrayTRUEs(size_t len)
 {
 	if (len <= sizeof(ArrayTRUEs))
@@ -926,6 +974,7 @@ COREARRAY_DLL_LOCAL const char *PrettyInt(int val)
 	return p;
 }
 
+
 /// Text matching, return -1 when no maching
 COREARRAY_DLL_LOCAL int MatchText(const char *txt, const char *list[])
 {
@@ -936,6 +985,7 @@ COREARRAY_DLL_LOCAL int MatchText(const char *txt, const char *list[])
 	}
 	return -1;
 }
+
 
 /// Get the number of alleles
 COREARRAY_DLL_LOCAL int GetNumOfAllele(const char *allele_list)
@@ -962,6 +1012,7 @@ COREARRAY_DLL_LOCAL int GetNumOfAllele(const char *allele_list)
 	return n;
 }
 
+
 /// Get the index in an allele list
 COREARRAY_DLL_LOCAL int GetIndexOfAllele(const char *allele, const char *allele_list)
 {
@@ -984,6 +1035,7 @@ COREARRAY_DLL_LOCAL int GetIndexOfAllele(const char *allele, const char *allele_
 	}
 	return -1;
 }
+
 
 /// Get strings split by comma
 COREARRAY_DLL_LOCAL void GetAlleles(const char *alleles, vector<string> &out)
@@ -1018,6 +1070,7 @@ COREARRAY_DLL_LOCAL void GDS_PATH_PREFIX_CHECK(const char *path)
 	}
 }
 
+
 COREARRAY_DLL_LOCAL void GDS_VARIABLE_NAME_CHECK(const char *p)
 {
 	for (; *p != 0; p++)
@@ -1029,6 +1082,7 @@ COREARRAY_DLL_LOCAL void GDS_VARIABLE_NAME_CHECK(const char *p)
 		}
 	}
 }
+
 
 /// get PdGDSObj from a SEXP object
 COREARRAY_DLL_LOCAL string GDS_PATH_PREFIX(const string &path, char prefix)
@@ -1052,6 +1106,16 @@ COREARRAY_DLL_LOCAL string GDS_PATH_PREFIX(const string &path, char prefix)
 		s.insert(s.begin(), prefix);
 
 	return s;
+}
+
+
+/// output to a connection
+COREARRAY_DLL_LOCAL void ConnPutText(Rconnection file, const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	(*file->vfprintf)(file, fmt, args);
+	va_end(args);
 }
 
 }

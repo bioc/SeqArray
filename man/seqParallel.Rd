@@ -6,18 +6,18 @@
     Applies a user-defined function in parallel.
 }
 \usage{
-seqParallel(cl=getOption("seqarray.parallel", FALSE), gdsfile, FUN,
+seqParallel(cl=seqGetParallel(), gdsfile, FUN,
     split=c("by.variant", "by.sample", "none"), .combine="unlist",
     .selection.flag=FALSE, ...)
-seqParApply(cl=getOption("seqarray.parallel", FALSE), x, FUN,
-    load.balancing=TRUE, ...)
+seqParApply(cl=seqGetParallel(), x, FUN, load.balancing=TRUE, ...)
 }
 \arguments{
     \item{cl}{\code{NULL} or \code{FALSE}: serial processing; \code{TRUE}:
-        parallel processing with the maximum number of cores minor one;
-        a numeric value: the number of cores to be used;
-        a cluster object for parallel processing, created by the functions
-        in the package \code{\link{parallel}}, like \code{\link{makeCluster}}.
+        multicore processing (the maximum number of cores minor one);
+        a numeric value: the number of cores to be used; a \code{cluster}
+        object for parallel processing, created by the functions in the package
+        \code{\link{parallel}}, like \code{\link{makeCluster}};
+        a \code{BiocParallelParam} object from the BiocParallel package.
         See details}
     \item{gdsfile}{a \code{\link{SeqVarGDSClass}} object, or \code{NULL}}
     \item{FUN}{the function to be applied, should be like
@@ -26,8 +26,9 @@ seqParApply(cl=getOption("seqarray.parallel", FALSE), x, FUN,
         processes, or "none" for no split}
     \item{.combine}{define a fucntion for combining results from different
         processes; by default, \code{"unlist"} is used, to produce a vector
-        which contains all the atomic components; \code{"list"}, return a list
-        of results created by processes; \code{"none"}, no return; or a
+        which contains all the atomic components, via
+        \code{unlist(..., recursive=FALSE)}; \code{"list"}, return a list
+        of results created by child processes; \code{"none"}, no return; or a
         function, like "+".}
     \item{.selection.flag}{\code{TRUE} -- passes a logical vector of selection
         to the second argument of \code{FUN(gdsfile, selection, ...)}}
@@ -63,7 +64,8 @@ setup multiple streams of pseudo-random numbers, and see
 \author{Xiuwen Zheng}
 \seealso{
     \code{\link{seqSetFilter}}, \code{\link{seqGetData}},
-    \code{\link{seqApply}}, \code{\link{seqParallelSetup}}
+    \code{\link{seqApply}}, \code{\link{seqParallelSetup}},
+    \code{\link{seqGetParallel}}
 }
 
 \examples{
