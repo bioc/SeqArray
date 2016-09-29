@@ -155,7 +155,7 @@ eig <- eigen(s)
 [..................................................]  0%, ETC: --- 
 [=>................................................]  2%, ETC: 5.4m
 ...
-[==================================================] 100%, ETC: 0s
+[==================================================] 100%, completed
 ```
 
 ```R
@@ -180,7 +180,7 @@ eig <- eigen(s)
 [..................................................]  0%, ETC: ---
 [==================>...............................] 35%, ETC: 9s
 [======================================>...........] 75%, ETC: 3s
-[==================================================] 100%, ETC: 0s
+[==================================================] 100%, completed
 ```
 
 `seqParallel()` utilizes the facilities offered by the R parallel package to perform calculations within a cluster or SMP environment, and the genotypes are automatically split into non-overlapping parts. The parallel implementation with R is shown as follows, and the C optimized function is also available in the SNPRelate package.
@@ -367,7 +367,7 @@ head(res)
 
 # Integration with SNPRelate
 
-Parallel implementations of relatedness and principal component analysis with SeqArray format are enabled in the package SNPRelate, to detect and adjust for population structure and cryptic relatedness in association studies. The kernel of SNPRelate was optimized with SIMD instructions and multi-thread algorithms, and it was designed for bi-allelic SNP data originally [@Zheng:2012:Bioinformatics:23060615]. In order to analyze sequence variant calls, and SNPRelate has been rewritten to take the dosages of reference alleles as an input genotype matrix with distinct integers 0, 1, 2 and NA for SeqArray files. Therefore no format conversion is required for WGS analyses.
+Parallel implementations of relatedness and principal component analysis with SeqArray format are enabled in the package SNPRelate, to detect and adjust for population structure and cryptic relatedness in association studies. The kernel of SNPRelate was optimized with SIMD instructions and multi-thread algorithms, and it was designed for bi-allelic SNP data originally [@Zheng2012]. In order to analyze sequence variant calls, and SNPRelate has been rewritten to take the dosages of reference alleles as an input genotype matrix with distinct integers 0, 1, 2 and NA for SeqArray files. Therefore no format conversion is required for WGS analyses.
 
 Principal component analysis is implemented in the SNPRelate function `snpgdsPCA()`, and the exact and new randomized algorithms are both provided [@Patterson:2006:PLoS-Genet:17194218; @Galinsky2016]. The randomized matrix algorithm is designed to reduce the running time for large number of study individuals (e.g., greater than 10,000 samples). Relatedness analyses include PLINK method of moment (MoM), KING robust methods, GCTA genetic relationship matrix (GRM) and individual-perspective beta estimator [@Purcell:2007:Am-J-Hum-Genet:17701901; @Manichaikul2010; @Yang2011; @weir2015snps], and these algorithms are computationally efficient and optimized with SIMD instructions. In addition, fixation index ($F_\text{st}$) has been widely used to measure the genetic difference between populations, and the calculations of moment estimators are available in the SNPRelate package with all variants or a sliding window [@Weir:1984:Evolution; @Weir:2002:Annu-Rev-Genet:12359738; @Weir2005].
 
@@ -518,7 +518,7 @@ abline(h=mean(sw$chr22.val), lty=3, col="red", lwd=2)
 
 # GENESIS
 
-The [GENESIS](http://www.bioconductor.org/packages/GENESIS) package offers methodology for estimating and accounting for population and pedigree structure in genetic analyses. The current implementation provides functions to perform PC-AiR and PC-Relate [@Conomos2015;  @Conomos2016]. PC-AiR performs PCA on whole-genome genotypes taking into account known or cryptic relatedness in the study sample. PC-Relate uses ancestry representative principal components to accurately estimate measures of recent genetic relatedness. In addition, the development version of GENESIS includes support for SeqArray files in mixed model association testing and introduces aggregate tests of rare variants including burden and sequence kernel association tests [@Wu2011].
+The [GENESIS](http://www.bioconductor.org/packages/GENESIS) package offers methodology for estimating and accounting for population and pedigree structure in genetic analyses. The current implementation provides functions to perform PC-AiR and PC-Relate [@Conomos2015;  @Conomos2016]. PC-AiR performs PCA on whole-genome genotypes taking into account known or cryptic relatedness in the study sample. PC-Relate uses ancestry representative principal components to estimate measures of recent genetic relatedness. In addition, the development version of GENESIS includes support for SeqArray files in mixed model association testing and aggregate tests of rare variants.
 
 .
 
