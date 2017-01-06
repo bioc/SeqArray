@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.15.0-1.15.1
+CHANGES IN VERSION 1.15.0-1.15.2
 -------------------------
 
     o The default compression setting in `seqVCF2GDS()` is changed from

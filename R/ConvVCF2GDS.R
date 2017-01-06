@@ -1101,18 +1101,18 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     } else {
         ## merge all temporary files
 
-        # open all temporary files
-        gdslist <- vector("list", length(ptmpfn))
-        for (i in seq_along(ptmpfn))
-            gdslist[[i]] <- seqOpen(ptmpfn[i])
-
         # all GDS variables to be merged
         varnm <- c("variant.id", "position", "chromosome", "allele",
-            "genotype/data", "genotype/@data", "phase/data",
+            "genotype/data", "genotype/@data",
+            "genotype/extra", "genotype/extra.index",
+            "phase/data", "phase/extra", "phase/extra.index",
             "annotation/id", "annotation/qual")
 
         if (is.null(index.gdsn(gfile, "phase/data", silent=TRUE)))
-            varnm <- setdiff(varnm, "phase/data")
+        {
+            varnm <- setdiff(varnm,
+                c("phase/data", "phase/extra", "phase/extra.index"))
+        }
 
         s <- ls.gdsn(index.gdsn(gfile, "annotation/info"), include.hidden=TRUE)
         if (length(s) > 0L)
@@ -1126,63 +1126,30 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         }
 
         if (verbose) cat("Merging:\n")
+        filtervar <- character()
 
-        for (nm in varnm)
+        # open all temporary files
+        for (fn in ptmpfn)
         {
-            v <- index.gdsn(gfile, nm)
-            for (f in gdslist)
-                append.gdsn(v, index.gdsn(f, nm))
-            readmode.gdsn(v)
-            if (verbose)
-            {
-                cat("   ", nm)
-                flush(stdout())
-            }
-            .DigestCode(v, digest, verbose)
+            # open the gds file
+            tmpgds <- seqOpen(fn)
+            # merge variables
+            for (nm in varnm)
+                append.gdsn(index.gdsn(gfile, nm), index.gdsn(tmpgds, nm))
+            # merge filter variable (a factor variable)
+            filtervar <- c(filtervar, as.character(
+                read.gdsn(index.gdsn(tmpgds, "annotation/filter"))))
+            # close the file
+            seqClose(tmpgds)
+            if (verbose) cat("    ", basename(fn), "\n", sep="")
         }
 
-        # merge filter variable (a factor variable)
-        s <- character()
-        for (f in gdslist)
-        {
-            s <- c(s, as.character(
-                read.gdsn(index.gdsn(f, "annotation/filter"))))
-        }
-        s <- as.factor(s)
-        append.gdsn(varFilter, s)
+
+        filtervar <- as.factor(filtervar)
+        append.gdsn(varFilter, filtervar)
         readmode.gdsn(varFilter)
-        if (verbose) cat("    annotation/filter")
-        .DigestCode(varFilter, digest, verbose)
-        s <- levels(s)
+        s <- levels(filtervar)
         filterlevels <- c(s, setdiff(header$filter$ID, s))
-
-        # merge genotype/extra.index, phase/extra.index
-        for (nm in c("genotype/extra.index", "phase/extra.index"))
-        {
-            s <- NULL
-            for (f in gdslist)
-            {
-                v <- read.gdsn(index.gdsn(f, nm))
-                if (length(v) > 0L)
-                    s <- cbind(s, v)
-            }
-            v <- index.gdsn(gfile, nm)
-            if (!is.null(s)) append.gdsn(v, s)
-            readmode.gdsn(v)
-        }
-
-        # merge genotype/extra, phase/extra
-        for (nm in c("genotype/extra", "phase/extra"))
-        {
-            v <- index.gdsn(gfile, nm)
-            for (f in gdslist) append.gdsn(v, index.gdsn(f, nm))
-            readmode.gdsn(v)
-        }
-
-
-        # close files
-        for (i in seq_along(ptmpfn))
-            seqClose(gdslist[[i]])
 
         # remove temporary files
         unlink(ptmpfn, force=TRUE)
@@ -1203,8 +1170,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         put.attr.gdsn(varFilter, "Description", dp)
     }
 
-    if (pnum <= 1L)
-        .DigestFile(gfile, digest, verbose)
+    .DigestFile(gfile, digest, verbose)
 
     closefn.gds(gfile)
     gfile <- NULL
