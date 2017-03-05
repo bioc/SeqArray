@@ -2,7 +2,7 @@
 //
 // Index.h: Indexing Objects
 //
-// Copyright (C) 2016    Xiuwen Zheng
+// Copyright (C) 2016-2017    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -168,6 +168,8 @@ public:
 	void InitOne(int num);
 	/// return the accumulated sum of values and current value in Lengths and Values given by a position
 	void GetInfo(size_t pos, C_Int64 &Sum, int &Value);
+	/// get lengths with selection
+	SEXP GetLen_Sel(const C_BOOL sel[]);
 	/// return true if empty
 	inline bool Empty() const { return (TotalLength <= 0); }
 
@@ -491,6 +493,19 @@ protected:
 	time_t _last_time;
 	bool Verbose;
 };
+
+
+
+// ===========================================================
+// Pre-defined R objects
+// ===========================================================
+
+extern SEXP R_Geno_Dim2_Name;
+extern SEXP R_Geno_Dim3_Name;
+extern SEXP R_Dosage_Name;
+extern SEXP R_Data_Name;
+extern SEXP R_Data_Dim2_Name;
+extern SEXP R_Data_Dim3_Name;
 
 
 

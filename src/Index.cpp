@@ -2,7 +2,7 @@
 //
 // Index.cpp: Indexing Objects
 //
-// Copyright (C) 2016    Xiuwen Zheng
+// Copyright (C) 2016-2017    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -136,6 +136,33 @@ void CIndex::GetInfo(size_t pos, C_Int64 &Sum, int &Value)
 	}
 	Sum = AccSum;
 	Value = Values[AccIndex];
+}
+
+SEXP CIndex::GetLen_Sel(const C_BOOL sel[])
+{
+	size_t n = GetNumOfTRUE(sel, TotalLength);
+	SEXP ans = PROTECT(NEW_INTEGER(n));
+	int *pAns = INTEGER(ans);
+
+	int *pV = &Values[0];
+	C_UInt32 *pL = &Lengths[0], L = *pL;
+	while (n > 0)
+	{
+		if (L == 0)
+		{
+			L = *(++pL); pV ++;
+			continue;  // in case, L = 0
+		}
+		L--;
+		if (*sel++)
+		{
+			*pAns++ = *pV;
+			n --;
+		}
+	}
+
+	UNPROTECT(1);
+	return ans;
 }
 
 
@@ -831,6 +858,20 @@ void CProgressStdOut::ShowProgress()
 		}
 	}
 }
+
+
+
+// ===========================================================
+// Pre-defined R objects
+// ===========================================================
+
+SEXP R_Geno_Dim2_Name = R_NilValue;
+SEXP R_Geno_Dim3_Name = R_NilValue;
+SEXP R_Dosage_Name    = R_NilValue;
+SEXP R_Data_Name      = R_NilValue;
+SEXP R_Data_Dim2_Name = R_NilValue;
+SEXP R_Data_Dim3_Name = R_NilValue;
+
 
 
 

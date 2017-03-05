@@ -27,13 +27,17 @@ Release Version: v1.14.1
 * [Help Documents](http://zhengxwen.github.io/SeqArray/release/help/00Index.html)
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [R Integration](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/R_Integration.html), [Overview Slides](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/OverviewSlides.html)
 
-Development Version: v1.15.2
+Development Version: v1.15.4
 
 [http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html)
 
 * [Help Documents](http://zhengxwen.github.io/SeqArray/devel/help/00Index.html)
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/devel/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [R Integration](http://www.bioconductor.org/packages/devel/bioc/vignettes/SeqArray/inst/doc/R_Integration.html), [Overview Slides](http://www.bioconductor.org/packages/devel/bioc/vignettes/SeqArray/inst/doc/OverviewSlides.html)
 
+
+## Citation
+
+Zheng X, Gogarten S, Lawrence M, Stilp A, Conomos M, Weir BS, Laurie C, Levine D. SeqArray -- A storage-efficient high-performance data format for WGS variant calls. *Minor Revision*.
 
 
 ## Installation (requiring >=R_v3.3.0)
@@ -144,9 +148,3 @@ seqClose(f)
 | seqGetData   | Get data from a SeqArray file with a defined filter. [![](vignettes/link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqGetData.html)  |
 | seqApply     | Apply a user-defined function over array margins. [![](vignettes/link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqApply.html)  |
 | seqParallel  | Apply functions in parallel. [![](vignettes/link.png)](http://zhengxwen.github.io/SeqArray/release/help/seqParallel.html)  |
-
-
-## Significant User-visible Changes (since v1.11.16)
-
-* `seqSummary(gds, "genotype")$seldim` returns a vector with 3 integers (ploidy, # of selected samples, # of selected variants) instead of 2 integers
-
