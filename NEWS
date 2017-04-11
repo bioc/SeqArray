@@ -12,8 +12,13 @@ CHANGES IN VERSION 1.16.0
 
     o a new CITATION file
 
+    o 'LZMA_RA' is the default compression method in `seqBED2GDS()` and
+      `seqSNP2GDS()`
 
-CHANGES IN VERSION 1.15.0-1.15.5
+    o `seqVCF_Header()` correctly calculates ploidy with missing genotypes
+
+
+CHANGES IN VERSION 1.15.0-1.15.6
 
 -------------------------
 
