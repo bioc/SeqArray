@@ -25,13 +25,15 @@ Variant Call Format (VCF) data. It extends \code{\link[gdsfmt]{gds.class}}.
 }
 
 \details{
-	A sequence GDS file is created from a VCF file with
+	A SeqArray GDS file is created from a VCF file with
 \code{\link{seqVCF2GDS}}. This file can be opened with \code{\link{seqOpen}}
 to create a \code{SeqVarGDSClass} object.
 }
 
 \section{Accessors}{
-	In the following code snippets \code{x} is a SeqVarGDSClass object.
+	In the following code snippets \code{x} is a SeqVarGDSClass object. Users
+must call \code{seqAsVCFInit()} and \code{seqAsVCF(x)} to enable the generic
+methods.
 	\describe{
 		\item{}{
 			\code{granges(x)}:
@@ -40,11 +42,11 @@ to create a \code{SeqVarGDSClass} object.
 		}
 		\item{}{
 			\code{ref(x)}:
-				Returns the reference alleles as a \code{\link{DNAStringSet}}.
+				Returns the reference alleles as a \code{\link[Biostrings]{DNAStringSet}}.
 		}
 		\item{}{
 			\code{alt(x)}:
-			Returns the alternate alleles as a \code{\link{DNAStringSetList}}.
+			Returns the alternate alleles as a \code{\link[Biostrings]{DNAStringSetList}}.
 		}
 		\item{}{
 			\code{qual(x)}:
@@ -84,18 +86,20 @@ to create a \code{SeqVarGDSClass} object.
 }
 
 \section{Coercion methods}{
-	In the following code snippets \code{x} is a SeqVarGDSClass object.
+	In the following code snippets \code{x} is a SeqVarGDSClass object. Users
+must call \code{seqAsVCFInit()} and \code{seqAsVCF(x)} to enable the generic
+methods.
 	\describe{
 		\item{}{
 			\code{asVCF(x, chr.prefix="", info=NULL, geno=NULL)}:
 			Coerces a SeqVarGDSClass object to a
-			\link{VCF-class} object.  Row names correspond
-	to the variant.id.  \code{info}
-			and \code{geno} specify the 'INFO' and
-	'GENO' (FORMAT) fields to return, respectively.  If not
-	specified, all fields are returned; if 'NA' no fields are
-	returned.  Use \code{\link{seqSetFilter}} prior to calling
-	\code{asVCF} to specify samples and variants to return.
+			\link[VariantAnnotation]{VCF-class} object.
+			Row names correspond to the variant.id.  \code{info} and
+			\code{geno} specify the 'INFO' and 'GENO' (FORMAT) fields to
+			return, respectively.  If not specified, all fields are returned;
+			if 'NA' no fields are returned.  Use \code{\link{seqSetFilter}}
+			prior to calling \code{asVCF} to specify samples and variants to
+			return.
 		}
 	}
 }
@@ -104,12 +108,8 @@ to create a \code{SeqVarGDSClass} object.
 \author{Stephanie Gogarten, Xiuwen Zheng}
 
 \seealso{
-  \code{\link[gdsfmt]{gds.class}},
-  \code{\link{seqVCF2GDS}},
-  \code{\link{seqOpen}},
-  \code{\link{seqGetData}},
-  \code{\link{seqSetFilter}},
-  \code{\link{seqClose}}
+    \code{\link[gdsfmt]{gds.class}}, \code{\link{seqOpen}},
+    \code{\link{seqAsVCFInit}}, \code{\link{seqAsVCF}}
 }
 
 \examples{
@@ -120,7 +120,10 @@ gds
 head(seqGetData(gds, "sample.id"))
 
 ## variants
-# granges(gds)
+granges(gds)
+
+\dontrun{
+seqAsVCFInit()  ## enable exporting the generic methods
 
 ## alleles as comma-separated character strings
 head(seqGetData(gds, "allele"))
@@ -149,6 +152,7 @@ table(depth$length)
 ## all length 1, so depth$data should be a sample by variant matrix
 dim(depth$data)
 depth$data[1:10,1:5]
+}
 
 seqClose(gds)
 }

@@ -220,7 +220,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceSample(SEXP gdsfile, SEXP samp_id,
 }
 
 
-/// set a working space with selected sample id (logical/raw vector, or index)
+/// set a working space with selected samples (logical/raw vector, or index)
 COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceSample2(SEXP gdsfile, SEXP samp_sel,
 	SEXP intersect, SEXP verbose)
 {
@@ -437,7 +437,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceVariant(SEXP gdsfile, SEXP var_id,
 }
 
 
-/// set a working space with selected variant id (logical/raw vector, or index)
+/// set a working space with selected variants (logical/raw vector, or index)
 COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceVariant2(SEXP gdsfile, SEXP var_sel,
 	SEXP intersect, SEXP verbose)
 {
@@ -830,22 +830,10 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SplitSelection(SEXP gdsfile, SEXP split,
 		C_BOOL *sel;
 		if (strcmp(split_str, "by.variant") == 0)
 		{
-			if (s.Variant.empty())
-			{
-				s.Variant.resize(
-					GDS_Array_GetTotalCount(GDS_Node_Path(
-					GDS_R_SEXP2FileRoot(gdsfile), "variant.id", TRUE)), TRUE);
-			}
 			sel = &s.Variant[0];
 			SelectCount = GetNumOfTRUE(sel, s.Variant.size());
 		} else if (strcmp(split_str, "by.sample") == 0)
 		{
-			if (s.Sample.empty())
-			{
-				s.Sample.resize(
-					GDS_Array_GetTotalCount(GDS_Node_Path(
-					GDS_R_SEXP2FileRoot(gdsfile), "sample.id", TRUE)), TRUE);
-			}
 			sel = &s.Sample[0];
 			SelectCount = GetNumOfTRUE(sel, s.Sample.size());
 		} else {
@@ -988,48 +976,6 @@ COREARRAY_DLL_EXPORT SEXP SEQ_IntAssign(SEXP Dst, SEXP Src)
 {
 	INTEGER(Dst)[0] = Rf_asInteger(Src);
 	return R_NilValue;
-}
-
-
-inline static void CvtDNAString(char *p)
-{
-	char c;
-	while ((c = *p))
-	{
-		c = toupper(c);
-		if (c!='A' && c!='C' && c!='G' && c!='T' && c!='M' && c!='R' &&
-			c!='W' && c!='S' && c!='Y' && c!='K' && c!='V' && c!='H' &&
-			c!='D' && c!='B' && c!='N' && c!='-' && c!='+' && c!='.')
-		{
-			c = '.';
-		}
-		*p++ = c;
-	}
-}
-
-COREARRAY_DLL_EXPORT SEXP SEQ_DNAStrSet(SEXP x)
-{
-	if (Rf_isVectorList(x))
-	{
-		size_t nlen = XLENGTH(x);	
-		for (size_t i=0; i < nlen; i++)
-		{
-			SEXP s = VECTOR_ELT(x, i);
-			if (Rf_isString(s))
-			{
-				size_t n = XLENGTH(s);
-				for (size_t j=0; j < n; j++)
-					CvtDNAString((char*)CHAR(STRING_ELT(s, j)));
-			}
-		}
-	} else if (Rf_isString(x))
-	{
-		size_t n = XLENGTH(x);
-		for (size_t i=0; i < n; i++)
-			CvtDNAString((char*)CHAR(STRING_ELT(x, i)));
-	}
-	
-	return x;
 }
 
 
@@ -1201,7 +1147,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 		CALL(SEQ_ConvBEDFlag, 3),           CALL(SEQ_ConvBED2GDS, 5),
 		CALL(SEQ_SelectFlag, 2),
 
-		CALL(SEQ_IntAssign, 2),             CALL(SEQ_DNAStrSet, 1),
+		CALL(SEQ_IntAssign, 2),
 
 		{ NULL, NULL, 0 }
 	};

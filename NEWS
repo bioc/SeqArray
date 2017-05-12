@@ -1,4 +1,16 @@
+CHANGES IN VERSION 1.17.0-1.17.1
+
+    o progress information: showing overall running time when completed
+
+    o new names "$ref" and "$alt" are allowed in `seqGetData()`
+
+    o not import VariantAnnotation methods until `seqAsVCF()` or
+      `seqAsVCFInit()` is called
+
+
 CHANGES IN VERSION 1.16.0
+
+-------------------------
 
     o a new argument 'intersect' in `seqSetFilter()` and `seqSetFilterChrom()`
 
@@ -7,7 +19,7 @@ CHANGES IN VERSION 1.16.0
     o `seqVCF2GDS()` allows arbitrary numbers of different alleles if REF and
       ALT in VCF are missing
 
-    o optimize internal indexing for FORMAT annotations to  avoid reloading
+    o optimize internal indexing for FORMAT annotations to avoid reloading
       the indexing from the GDS file
 
     o a new CITATION file
