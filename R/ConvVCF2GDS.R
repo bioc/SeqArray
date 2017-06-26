@@ -658,7 +658,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             # conversion in parallel
             seqParallel(parallel, NULL, FUN = function(
                 vcf.fn, header, storage.option, info.import, fmt.import,
-                genotype.var.name, ignore.chr.prefix, raise.error,
+                genotype.var.name, ignore.chr.prefix, optim, raise.err,
                 ptmpfn, psplit, num_array)
             {
                 library("SeqArray")
@@ -673,7 +673,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                     fmt.import=fmt.import, genotype.var.name=genotype.var.name,
                     ignore.chr.prefix=ignore.chr.prefix,
                     start = psplit[[1L]][i], count = psplit[[2L]][i],
-                    optimize=FALSE, raise.error=raise.error, digest=FALSE,
+                    optimize=optim, raise.error=raise.err, digest=FALSE,
                     parallel=FALSE, verbose=FALSE)
 
                 invisible()
@@ -682,18 +682,16 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                 vcf.fn=vcf.fn, header=header, storage.option=storage.option,
                 info.import=info.import, fmt.import=fmt.import,
                 genotype.var.name=genotype.var.name,
-                ignore.chr.prefix=ignore.chr.prefix, raise.error=raise.error,
+                ignore.chr.prefix=ignore.chr.prefix,
+                optim=optimize, raise.err=raise.error,
                 ptmpfn=ptmpfn, psplit=psplit, num_array=num_array)
-
-            # may not need to optimize data
-            # optimize <- FALSE
 
             if (verbose)
                 cat("    Done (", date(), ").\n", sep="")
 
         } else {
             pnum <- 1L
-            message("Not need to run in parallel!")
+            message("No parallel environment!")
         }
     }
 
