@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.17.0-1.17.3
+CHANGES IN VERSION 1.17.0-1.17.4
 
     o progress information: showing overall running time when completed
 
@@ -6,7 +6,13 @@ CHANGES IN VERSION 1.17.0-1.17.3
 
     o move VariantAnnotation to the suggest field from the import field
 
-    o remove an unused argument '.list_dup' in seqBlockApply()
+    o remove an unused argument '.list_dup' in `seqBlockApply()`
+
+    o fix the unexpected behaviors in `seqSetFilter(, action="push")` and
+      `seqSetFilter(, action="push+intersect")`
+
+    o fix a bug in `seqGetData(f, "$dosage")` when the number of unique alleles
+      at a site greater than 3 (https://github.com/zhengxwen/SeqArray/issues/21)
 
 
 CHANGES IN VERSION 1.16.0
