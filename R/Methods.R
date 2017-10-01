@@ -108,12 +108,13 @@ setMethod("seqSetFilter", signature(object="SeqVarGDSClass", variant.sel="ANY"),
                         "'sample.sel' and 'variant.sel' should be NULL.")
                 }
                 .Call(SEQ_FilterPushLast, object)
+                return(invisible())
             },
             "push+set" = {
                 .Call(SEQ_FilterPushEmpty, object)
             },
             "push+intersect" = {
-                .Call(SEQ_FilterPushEmpty, object)
+                .Call(SEQ_FilterPushLast, object)
                 setflag <- TRUE
             },
             "pop" = {
