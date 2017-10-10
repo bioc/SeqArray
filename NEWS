@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.17.0-1.17.5
+CHANGES IN VERSION 1.18.0
 
     o progress information: showing overall running time when completed
 
@@ -19,7 +19,6 @@ CHANGES IN VERSION 1.17.0-1.17.5
 
 
 CHANGES IN VERSION 1.16.0
-
 -------------------------
 
     o a new argument 'intersect' in `seqSetFilter()` and `seqSetFilterChrom()`
@@ -41,7 +40,6 @@ CHANGES IN VERSION 1.16.0
 
 
 CHANGES IN VERSION 1.15.0-1.15.6
-
 -------------------------
 
     o the version number was bumped for the Bioconductor develop version 3.4
