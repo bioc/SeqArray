@@ -15,7 +15,11 @@ CHANGES IN VERSION 1.18.0
       at a site greater than 3 (https://github.com/zhengxwen/SeqArray/issues/21)
 
     o fix a bug in `seqSNP2GDS()` for inverted genotypes during importing data
-      (https://github.com/zhengxwen/SeqArray/issues/22)
+      from SNP GDS files (https://github.com/zhengxwen/SeqArray/issues/22)
+
+    o new argument '.progress' in `seqDigest()`
+
+    o new argument 'ref.allele' in `seqAlleleCount()`
 
 
 CHANGES IN VERSION 1.16.0
@@ -39,12 +43,6 @@ CHANGES IN VERSION 1.16.0
     o `seqVCF_Header()` correctly calculates ploidy with missing genotypes
 
 
-CHANGES IN VERSION 1.15.0-1.15.6
--------------------------
-
-    o the version number was bumped for the Bioconductor develop version 3.4
-
-
 CHANGES IN VERSION 1.14.1
 -------------------------
 
@@ -54,12 +52,6 @@ CHANGES IN VERSION 1.14.1
     o `seqVCF2GDS()`: variable-length encoding method is used to store
       integers in the FORMAT field of VCF files to reduce the file size and
       compression time
-
-
-CHANGES IN VERSION 1.13.0-1.13.6
--------------------------
-
-    o the version number was bumped for the Bioconductor develop version 3.4
 
 
 CHANGES IN VERSION 1.12.0-1.12.9
@@ -324,4 +316,4 @@ CHANGES IN VERSION 1.0.0
 CHANGES IN VERSION 0.99.0
 -------------------------
 
-    o first submission
+    o initial submission
