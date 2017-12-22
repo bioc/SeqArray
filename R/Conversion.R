@@ -13,7 +13,7 @@
 #
 
 seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
-    verbose=TRUE)
+    use_Rsamtools=TRUE, verbose=TRUE)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
@@ -69,7 +69,21 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
         ext <- substring(vcf.fn, nchar(vcf.fn)-2L)
         if (ext == ".gz")
         {
-            ofile <- gzfile(vcf.fn, "wb")
+            if (.Platform$OS.type == "windows")
+                use_Rsamtools <- FALSE
+            if (isTRUE(use_Rsamtools) & requireNamespace("Rsamtools"))
+            {
+                ofile <- .Call(SEQ_bgzip_create, vcf.fn)
+            } else {
+                if (verbose)
+                {
+                    if (.Platform$OS.type != "windows")
+                        cat("Hint: install Rsamtools to enable the bgzf output.\n")
+                    else
+                        cat("Hint: output to a general gzip file ...\n")
+                }
+                ofile <- gzfile(vcf.fn, "wb")
+            }
         } else if (ext == ".bz")
         {
             ofile <- bzfile(vcf.fn, "wb")
@@ -651,7 +665,7 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     bed_flag <- .Call(SEQ_ConvBEDFlag, bedfile$con, readBin, new.env())
     if (verbose)
     {
-        cat("\tBED file: \"", bed.fn, "\"", sep="")
+        cat("    BED file: '", bed.fn, "'", sep="")
         if (bed_flag == 0)
             cat(" in the individual-major mode (SNP X Sample)\n")
         else
@@ -676,7 +690,7 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     if (verbose)
     {
         n <- nrow(famD)
-        cat("\tFAM file: '", fam.fn, "' (", .pretty(n), " sample",
+        cat("    FAM file: '", fam.fn, "' (", .pretty(n), " sample",
             .plural(n), ")\n", sep="")
     }
 
@@ -689,7 +703,7 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     if (verbose)
     {
         n <- nrow(bimD)
-        cat("\tBIM file: '", bim.fn, "' (", .pretty(n), " variant",
+        cat("    BIM file: '", bim.fn, "' (", .pretty(n), " variant",
             .plural(n), ")\n", sep="")
     }
 

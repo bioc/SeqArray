@@ -20,14 +20,14 @@ The SeqArray package is built on top of Genomic Data Structure (GDS) data format
 
 ## Bioconductor:
 
-Release Version: v1.16.0
+Release Version: v1.18.1
 
 [http://www.bioconductor.org/packages/release/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/release/bioc/html/SeqArray.html)
 
 * [Help Documents](http://zhengxwen.github.io/SeqArray/release/help/00Index.html)
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [R Integration](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/R_Integration.html), [Overview Slides](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/OverviewSlides.html)
 
-Development Version: v1.17.7
+Development Version: v1.19.4
 
 [http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html)
 
@@ -150,6 +150,13 @@ seqClose(f)
 | ...  | [»](http://zhengxwen.github.io/SeqArray/release/help/00Index.html) |
 
 
+## Performance
+
+Update ... (in progress)
+
+
 ## Also See
 
-[PySeqArray](https://github.com/CoreArray/PySeqArray): data manipulation of whole-genome sequencing variants in Python
+[PySeqArray](https://github.com/CoreArray/PySeqArray): data manipulation of whole-genome sequencing variant data in Python
+
+[JSeqArray.jl](https://github.com/CoreArray/JSeqArray.jl): data manipulation of whole-genome sequencing variant data in Julia

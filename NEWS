@@ -1,4 +1,31 @@
+CHANGES IN VERSION 1.19.2-1.19.4
+-------------------------
+
+UTILITIES
+
+    o `seqDigest(f, "annotation/filter")` works on a factor variable
+
+    o improve the efficiency of `seqMerge()` to avoid genotype recompression
+      by padding the 2-bit genotype array in bytes
+
+    o use `.onLoad()` instead of `.onAttach()`
+
+NEW FEATURES
+
+    o `seqGDS2VCF()` outputs a bgzip vcf file for tabix indexing
+
+
+CHANGES IN VERSION 1.18.1
+-------------------------
+
+BUG FIXES
+
+    o fix an issue: `seqSetFilterChrom()` extends a genomic range
+      upstream and downstream 1bp
+
+
 CHANGES IN VERSION 1.18.0
+-------------------------
 
 NEW FEATURES
 
