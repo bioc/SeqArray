@@ -1,3 +1,12 @@
+CHANGES IN VERSION 1.18.2
+-------------------------
+
+BUG FIXES
+
+    o use `.onLoad()` instead of `.onAttach()` to fix
+      https://support.bioconductor.org/p/104405/#104443
+
+
 CHANGES IN VERSION 1.18.1
 -------------------------
 
