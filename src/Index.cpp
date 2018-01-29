@@ -481,12 +481,103 @@ bool CRangeSet::IsIncluded(int point)
 // SeqArray GDS file information
 // ===========================================================
 
+TSelection::TSelection(CFileInfo &File, bool init)
+{
+	Link = NULL;
+	if (File.Ploidy() <= 0)
+		throw ErrSeqArray("Unable to determine ploidy.");
+	numPloidy = File.Ploidy();
+	numSamp = File.SampleNum(); pSample = new C_BOOL[numSamp];
+	if (init) memset(pSample, TRUE, numSamp);
+	numVar = File.VariantNum(); pVariant = new C_BOOL[numVar];
+	if (init) memset(pVariant, TRUE, numVar);
+	pFlagGenoSel = NULL;
+	varTrueNum = -1; varStart = varEnd = 0;
+}
+
+TSelection::~TSelection()
+{
+	if (pSample)
+		{ delete[] pSample; pSample = NULL; }
+	if (pVariant)
+		{ delete[] pVariant; pVariant = NULL; }
+	ClearStructSample();
+	Link = NULL;
+}
+
+C_BOOL *TSelection::GetFlagGenoSel()
+{
+	if (!pFlagGenoSel)
+	{
+		const size_t SIZE = numSamp * numPloidy;
+		pFlagGenoSel = new C_BOOL[SIZE];  // set the output
+		C_BOOL *p = pFlagGenoSel, *s = pSample;
+		memset(p, TRUE, SIZE);
+		for (size_t n=numSamp; n > 0; n--)
+		{
+			if (*s++ == FALSE)
+			{
+				for (size_t m=numPloidy; m > 0; m--) *p++ = FALSE;
+			} else {
+				p += numPloidy;
+			}
+		}
+	}
+	return pFlagGenoSel;
+}
+
+void TSelection::GetStructVariant()
+{
+	if (varTrueNum < 0)
+	{
+		C_BOOL *end = pVariant + numVar;
+		C_BOOL *p = VEC_BOOL_FIND_TRUE(pVariant, end);
+		varStart = p - pVariant;
+		C_BOOL *last = end - 1;
+		size_t num = 0;
+		for (; p < end; p++)
+			if (*p) { num++; last = p; }
+		varTrueNum = num;
+		varEnd = last + 1 - pVariant;
+	}
+}
+
+void TSelection::ClearSelectVariant()
+{
+	if (varTrueNum < 0)
+	{
+		memset(pVariant, 0, numVar);
+	} else {
+		memset(pVariant+varStart, 0, varEnd-varStart);
+	}
+	varTrueNum = varStart = varEnd = 0;
+}
+
+void TSelection::ClearStructSample()
+{
+	if (pFlagGenoSel)
+	{
+		delete[] pFlagGenoSel;
+		pFlagGenoSel = NULL;
+	}
+}
+
+void TSelection::ClearStructVariant()
+{
+	varTrueNum = -1;
+	varStart = varEnd = 0;
+}
+
+
+//
+
 static const char *ERR_DIM = "Invalid dimension of '%s'.";
 static const char *ERR_FILE_ROOT = "CFileInfo::FileRoot should be initialized.";
 
 CFileInfo::CFileInfo(PdGDSFolder root)
 {
 	_Root = NULL;
+	_SelList = NULL;
 	_SampleNum = _VariantNum = 0;
 	ResetRoot(root);
 }
@@ -495,6 +586,18 @@ CFileInfo::~CFileInfo()
 {
 	_Root = NULL;
 	_SampleNum = _VariantNum = 0;
+	clear_selection();
+}
+
+void CFileInfo::clear_selection()
+{
+	for (TSelection *p=_SelList; p != NULL; )
+	{
+		TSelection *n = p;
+		p = p->Link;
+		delete n;
+	}
+	_SelList = NULL;
 }
 
 void CFileInfo::ResetRoot(PdGDSFolder root)
@@ -503,9 +606,9 @@ void CFileInfo::ResetRoot(PdGDSFolder root)
 	{
 		// initialize
 		_Root = root;
-		SelList.clear();
 		_Chrom.Clear();
 		_Position.clear();
+		clear_selection();
 
 		// sample.id
 		PdAbstractArray Node = GDS_Node_Path(root, "sample.id", TRUE);
@@ -533,6 +636,9 @@ void CFileInfo::ResetRoot(PdGDSFolder root)
 				_Ploidy = DLen[2];
 			}
 		}
+
+		// initialize selection
+		_SelList = new TSelection(*this, true);
 	}
 }
 
@@ -540,16 +646,28 @@ TSelection &CFileInfo::Selection()
 {
 	if (!_Root)
 		throw ErrSeqArray(ERR_FILE_ROOT);
-	if (SelList.empty())
-		SelList.push_back(TSelection());
+	return *_SelList;
+}
 
-	TSelection &s = SelList.back();
-	if (s.Sample.empty())
-		s.Sample.resize(_SampleNum, TRUE);
-	if (s.Variant.empty())
-		s.Variant.resize(_VariantNum, TRUE);
+TSelection &CFileInfo::Push_Selection(bool init_samp, bool init_var)
+{
+	TSelection *n = new TSelection(*this, false);
+	n->Link = _SelList;
+	if (init_samp)
+		memcpy(n->pSample, _SelList->pSample, _SampleNum);
+	if (init_var)
+		memcpy(n->pVariant, _SelList->pVariant, _VariantNum);
+	_SelList = n;
+	return *n;
+}
 
-	return s;
+void CFileInfo::Pop_Selection()
+{
+	if (_SelList==NULL || _SelList->Link==NULL)
+		throw ErrSeqArray("No filter can be pop up.");
+	TSelection *n = _SelList;
+	_SelList = n->Link;
+	delete n;
 }
 
 CChromIndex &CFileInfo::Chromosome()
@@ -612,14 +730,15 @@ PdAbstractArray CFileInfo::GetObj(const char *name, C_BOOL MustExist)
 
 int CFileInfo::SampleSelNum()
 {
-	TSelection &sel = Selection();
-	return vec_i8_cnt_nonzero((C_Int8*)&sel.Sample[0], _SampleNum);
+	TSelection &s = Selection();
+	return vec_i8_cnt_nonzero((C_Int8*)s.pSample, _SampleNum);
 }
 
 int CFileInfo::VariantSelNum()
 {
-	TSelection &sel = Selection();
-	return vec_i8_cnt_nonzero((C_Int8*)&sel.Variant[0], _VariantNum);
+	TSelection &s = Selection();
+	s.GetStructVariant();
+	return s.varTrueNum;
 }
 
 
@@ -667,7 +786,7 @@ static C_BOOL ArrayTRUEs[64] = {
 CVarApply::CVarApply()
 {
 	fVarType = ctNone;
-	MarginalSize = 0;
+	MarginalStart = MarginalEnd = 0;
 	MarginalSelect = NULL;
 	Node = NULL;
 	Position = 0;
@@ -678,20 +797,16 @@ CVarApply::~CVarApply()
 
 void CVarApply::Reset()
 {
-	Position = 0;
-	if (MarginalSize > 0)
-		if (!MarginalSelect[0]) Next();
+	Position = MarginalStart;
+	if ((MarginalEnd - MarginalStart) > 0)
+		if (!MarginalSelect[MarginalStart]) Next();
 }
 
 bool CVarApply::Next()
 {
-	C_BOOL *p = MarginalSelect + Position;
-	while (Position < MarginalSize)
-	{
-		Position ++;
-		if (*(++p)) break;
-	}
-	return (Position < MarginalSize);
+	C_BOOL *p = MarginalSelect;
+	Position = VEC_BOOL_FIND_TRUE(p+Position+1, p+MarginalEnd) - p;
+	return (Position < MarginalEnd);
 }
 
 C_BOOL *CVarApply::NeedTRUEs(size_t size)
@@ -712,8 +827,16 @@ CApply_Variant::CApply_Variant(): CVarApply()
 
 CApply_Variant::CApply_Variant(CFileInfo &File): CVarApply()
 {
-	MarginalSize = File.VariantNum();
-	MarginalSelect = File.Selection().pVariant();
+	InitMarginal(File);
+}
+
+void CApply_Variant::InitMarginal(CFileInfo &File)
+{
+	TSelection &Sel = File.Selection();
+	Sel.GetStructVariant();
+	MarginalStart = Sel.varStart;
+	MarginalEnd = Sel.varEnd;
+	MarginalSelect = Sel.pVariant;
 }
 
 

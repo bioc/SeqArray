@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include <string.h>
 
+
 #if defined(COREARRAY_SIMD_SSE) && defined(COREARRAY_SIMD_SSE2)
 
 #   include <xmmintrin.h>  // SSE
@@ -296,9 +297,6 @@ COREARRAY_DLL_DEFAULT const int8_t *vec_i8_cnt_nonzero_ptr(const int8_t *p,
 // functions for int8
 // ===========================================================
 
-/// return the pointer to the non-zeros character starting from p
-COREARRAY_DLL_DEFAULT const char *vec_i8_ptr_nonzero(const char *p, size_t n);
-
 /// count how many 'val' in 'p'
 COREARRAY_DLL_DEFAULT size_t vec_i8_count(const char *p, size_t n, char val);
 
@@ -371,6 +369,9 @@ COREARRAY_DLL_DEFAULT void vec_i32_cnt_dosage2(const int32_t *p,
 /// shifting *p right by 2 bits, assuming p is 4-byte aligned
 COREARRAY_DLL_DEFAULT void vec_i32_shr_b2(int32_t *p, size_t n);
 
+/// bounds checking, return 0 if fails
+COREARRAY_DLL_DEFAULT int vec_i32_bound_check(int32_t *p, size_t n, int bound);
+
 
 
 // ===========================================================
@@ -380,11 +381,18 @@ COREARRAY_DLL_DEFAULT void vec_i32_shr_b2(int32_t *p, size_t n);
 
 
 // ===========================================================
-// functions for char
+// functions for searching characters
 // ===========================================================
 
+#define  VEC_BOOL_FIND_TRUE(p, end)    \
+	(C_BOOL*)vec_bool_find_true((int8_t*)(p), (int8_t*)(end))
+
+/// find CRLF character
 COREARRAY_DLL_DEFAULT const char *vec_char_find_CRLF(const char *p, size_t n);
 
+/// find non-zero
+COREARRAY_DLL_DEFAULT const int8_t *vec_bool_find_true(const int8_t *p,
+	const int8_t *end);
 
 
 #ifdef __cplusplus

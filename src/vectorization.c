@@ -225,17 +225,6 @@ const int8_t *vec_i8_cnt_nonzero_ptr(const int8_t *p, size_t n, size_t *out_n)
 // functions for int8
 // ===========================================================
 
-/// return the pointer to the non-zero character starting from p
-const char *vec_i8_ptr_nonzero(const char *p, size_t n)
-{
-	// tail
-	for (; n > 0; n--, p++)
-		if (*p) break;
-
-	return p;
-}
-
-
 size_t vec_i8_count(const char *p, size_t n, char val)
 {
 	size_t num = 0;
@@ -1346,6 +1335,50 @@ void vec_i32_shr_b2(int32_t *p, size_t n)
 }
 
 
+/// bounds checking, excluding NA_INTEGER
+int vec_i32_bound_check(int32_t *p, size_t n, int bound)
+{
+	#define NA_INTEGER  0x80000000
+
+#ifdef COREARRAY_SIMD_AVX2
+	__m256i NA8   = _mm256_set1_epi32(NA_INTEGER);
+	__m256i ZERO8 = _mm256_setzero_si256();
+	__m256i BND8  = _mm256_set1_epi32(bound+1);
+	for (; n >= 8; n-=8)
+	{
+		__m256i i8 = _mm256_loadu_si256((__m256i const*)p);
+		p += 8;
+		__m256i m = _mm256_and_si256(_mm256_cmpgt_epi32(i8, ZERO8),
+			_mm256_cmpgt_epi32(BND8, i8));
+		m = _mm256_or_si256(m, _mm256_cmpeq_epi32(i8, NA8));
+		if (_mm256_movemask_epi8(m) != -1)
+			return 0;
+	}
+#endif
+#ifdef COREARRAY_SIMD_SSE2
+	__m128i NA   = _mm_set1_epi32(NA_INTEGER);
+	__m128i ZERO = _mm_setzero_si128();
+	__m128i BND  = _mm_set1_epi32(bound+1);
+	for (; n >= 4; n-=4)
+	{
+		__m128i i4 = _mm_loadu_si128((__m128i const*)p);
+		p += 4;
+		__m128i m = _mm_and_si128(_mm_cmplt_epi32(ZERO, i4), _mm_cmplt_epi32(i4, BND));
+		m = _mm_or_si128(m, _mm_cmpeq_epi32(i4, NA));
+		if (_mm_movemask_epi8(m) != 0xFFFF)
+			return 0;
+	}
+#endif
+	for (; n > 0; n--)
+	{
+		int i = *p++;
+		if ((i != NA_INTEGER) && ((i < 1) || (i > bound)))
+			return 0;
+	}
+	return -1;
+}
+
+
 
 // ===========================================================
 // functions for char
@@ -1411,5 +1444,35 @@ tail:
 	for (; n > 0; n--, p++)
 		if (*p=='\n' || *p=='\r') break;
 
+	return p;
+}
+
+
+/// find non-zero
+COREARRAY_DLL_DEFAULT const int8_t *vec_bool_find_true(const int8_t *p,
+	const int8_t *end)
+{
+#ifdef COREARRAY_SIMD_AVX
+	for (; p+32 < end; p+=32)
+	{
+		__m256i v = _mm256_loadu_si256((__m256i const*)p);
+		if (!_mm256_testz_si256(v, v)) break;
+	}
+#endif
+#ifdef COREARRAY_SIMD_SSE2
+	#ifndef COREARRAY_SIMD_SSE4_1
+	__m128i zero = _mm_setzero_si128();
+	#endif
+	for (; p+16 < end; p+=16)
+	{
+		__m128i v = _mm_loadu_si128((__m128i const*)p);
+	#ifdef COREARRAY_SIMD_SSE4_1
+		if (!_mm_testz_si128(v, v)) break;
+	#else
+		if (_mm_movemask_epi8(_mm_cmpeq_epi8(v, zero)) != 0xFFFF) break;
+	#endif
+	}
+#endif
+	for (; p < end; p++) if (*p) break;
 	return p;
 }

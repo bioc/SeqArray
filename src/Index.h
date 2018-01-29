@@ -306,16 +306,41 @@ protected:
 // SeqArray GDS file information
 // ===========================================================
 
+class CFileInfo;
+
 /// selection object used in GDS file
 struct COREARRAY_DLL_LOCAL TSelection
 {
-	vector<C_BOOL> Sample;   ///< sample selection
-	vector<C_BOOL> Variant;  ///< variant selection
+	TSelection *Link;  ///< the pointer to the last one
+	C_BOOL *pSample;   ///< sample selection
+	C_BOOL *pVariant;  ///< variant selection
 
-	inline C_BOOL *pSample()
-		{ return Sample.empty() ? NULL : &Sample[0]; }
-	inline C_BOOL *pVariant()
-		{ return Variant.empty() ? NULL : &Variant[0]; }
+	ssize_t varTrueNum;  ///< the number of TRUEs in pVariant, -1 for requiring initialization
+	ssize_t varStart;    ///< the start position of the first TRUE in pVariant
+	ssize_t varEnd;      ///< the next position of the last TRUE in pVariant
+
+	/// constructor
+	TSelection(CFileInfo &File, bool init);
+	/// destructor
+	~TSelection();
+
+	/// get the bool array for genotype selection
+	C_BOOL *GetFlagGenoSel();
+	/// get the structure of selected variants
+	void GetStructVariant();
+	/// clear selected varaints
+	void ClearSelectVariant();
+
+	/// clear the structure of selected samples for resetting the sample filter
+	void ClearStructSample();
+	/// clear the structure of selected variants for resetting the variant filter
+	void ClearStructVariant();
+
+private:
+	size_t numSamp;    ///< the total number of samples
+	size_t numVar;     ///< the total number of variants
+	size_t numPloidy;  ///< the ploidy
+	C_BOOL *pFlagGenoSel;  ///< the pointer to the genotype selection according to the selected samples
 };
 
 
@@ -323,8 +348,6 @@ struct COREARRAY_DLL_LOCAL TSelection
 class COREARRAY_DLL_LOCAL CFileInfo
 {
 public:
-	list<TSelection> SelList;  ///< a list of sample and variant selections
-
 	/// constructor
 	CFileInfo(PdGDSFolder root=NULL);
 	/// destructor
@@ -332,8 +355,13 @@ public:
 
 	/// reset the root of GDS file
 	void ResetRoot(PdGDSFolder root);
-	/// get selection
+
+	/// get the current selection
 	TSelection &Selection();
+	/// push a new selection to the list of selection
+	TSelection &Push_Selection(bool init_samp, bool init_var);
+	/// pop back a selection
+	void Pop_Selection();
 
 	/// return _Chrom which has been initialized
 	CChromIndex &Chromosome();
@@ -358,19 +386,25 @@ public:
 	/// ploidy
 	inline int Ploidy() const { return _Ploidy; }
 
+	/// get the number of selected samples
 	int SampleSelNum();
+	/// get the number of selected variants
 	int VariantSelNum();
 
 protected:
-	PdGDSFolder _Root;  ///< the root of GDS file
-	int _SampleNum;     ///< the total number of samples
-	int _VariantNum;    ///< the total number of variants
-	int _Ploidy;        ///< ploidy
+	PdGDSFolder _Root;     ///< the root of GDS file
+	TSelection *_SelList;  ///< the pointer to the sample and variant selections
+	int _SampleNum;   ///< the total number of samples
+	int _VariantNum;  ///< the total number of variants
+	int _Ploidy;      ///< ploidy
 
 	CChromIndex _Chrom;  ///< chromosome indexing
 	vector<C_Int32> _Position;  ///< position
 	CGenoIndex _GenoIndex;  ///< the indexing object for genotypes
 	map<string, CIndex> _VarIndex;  ///< the indexing objects for INFO/FORMAT variables
+
+private:
+	inline void clear_selection();
 };
 
 
@@ -408,7 +442,8 @@ class COREARRAY_DLL_LOCAL CVarApply: public CVariable
 {
 protected:
 	TVarType fVarType;       ///< VCF data type
-	ssize_t MarginalSize;    ///< the size in MarginalSelect
+	ssize_t MarginalStart;   ///< the start position in MarginalSelect
+	ssize_t MarginalEnd;     ///< the ending position in MarginalSelect
 	C_BOOL *MarginalSelect;  ///< pointer to variant selection
 
 public:
@@ -449,6 +484,9 @@ public:
 	CApply_Variant();
 	/// constructor with file information
 	CApply_Variant(CFileInfo &File);
+
+protected:
+	void InitMarginal(CFileInfo &File);
 };
 
 
