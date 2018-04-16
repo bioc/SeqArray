@@ -7,7 +7,7 @@
 \usage{
 seqStorageOption(compression=c("ZIP_RA", "ZIP_RA.fast", "ZIP_RA.max",
     "LZ4_RA", "LZ4_RA.fast", "LZ4_RA.max", "LZMA_RA", "LZMA_RA.fast",
-    "LZMA_RA.max", "none"), mode=NULL, float.mode="float32",
+    "LZMA_RA.max", "Ultra", "UltraMax", "none"), mode=NULL, float.mode="float32",
     geno.compress=NULL, info.compress=NULL, format.compress=NULL,
     index.compress=NULL, ...)
 }
@@ -31,8 +31,19 @@ seqStorageOption(compression=c("ZIP_RA", "ZIP_RA.fast", "ZIP_RA.max",
     \item{...}{other specified storage compression for corresponding variable,
         e.g., `annotation/info/HM`="ZIP_MAX"}
 }
+\details{
+    The compression modes \code{"Ultra"} and \code{"UltraMax"} attempt to
+maximize the compression ratio using gigabyte-sized or even terabyte-sized
+virtual memory, according to \code{"LZMA_RA.ultra"} and
+\code{"LZMA_RA.ultra_max"} in \code{\link{compression.gdsn}}. These features
+require gdsfmt (>=v1.16.0). \code{"Ultra"} and \code{"UltraMax"} may not
+increase the compression ratio much compared with \code{"LZMA_RA.max"}, and
+these options are designed for the users who want to exhaust the computational
+resources.
+}
 \value{
-    Return a list with a class name "SeqGDSStorageClass".
+    Return a list with a class name "SeqGDSStorageClass", contains the
+compression algorithm for each data type.
 }
 
 \author{Xiuwen Zheng}

@@ -157,13 +157,15 @@ seqGetParallel <- function()
 #
 seqStorageOption <- function(compression=c("ZIP_RA", "ZIP_RA.fast",
     "ZIP_RA.max", "LZ4_RA", "LZ4_RA.fast", "LZ4_RA.max",
-    "LZMA_RA", "LZMA_RA.fast", "LZMA_RA.max", "none"), mode=NULL,
-    float.mode="float32", geno.compress=NULL, info.compress=NULL,
+    "LZMA_RA", "LZMA_RA.fast", "LZMA_RA.max", "Ultra", "UltraMax", "none"),
+    mode=NULL, float.mode="float32", geno.compress=NULL, info.compress=NULL,
     format.compress=NULL, index.compress=NULL, ...)
 {
     # check
     compression <- match.arg(compression)
-    if (compression == "none") compression <- ""
+    z <- switch(compression,
+        none="", Ultra="LZMA_RA.ultra", UltraMax="LZMA_RA.ultra_max")
+    if (!is.null(z)) compression <- z
 
     stopifnot(is.null(mode) | is.character(mode))
     stopifnot(is.character(float.mode), length(float.mode) > 0L)
@@ -178,21 +180,42 @@ seqStorageOption <- function(compression=c("ZIP_RA", "ZIP_RA.fast",
         stopifnot(is.character(index.compress), length(index.compress)==1L)
 
     if (compression %in% c("ZIP_RA.max", "LZ4_RA.max", "LZMA_RA.max"))
-        suffix <- ":8M"
-    else
-        suffix <- ":1M"
+    {
+        suf_b <- ":1M"; suf_i <- ":1M"; suf_f <- ":4M"
+        if (is.null(index.compress)) index.compress <- compression
+    } else if (compression=="LZMA_RA.ultra")
+    {
+        suf_b <- ":4M"; suf_i <- ":4M"; suf_f <- ":8M"
+        if (is.null(index.compress)) index.compress <- "LZMA.max"
+    } else if (compression=="LZMA_RA.ultra_max")
+    {
+        suf_b <- suf_i <- suf_f <- ":8M"
+        if (is.null(index.compress)) index.compress <- "LZMA.max"
+    } else {
+        suf_b <- suf_i <- ""
+        suf_f <- ":1M"
+        if (is.null(index.compress)) index.compress <- compression
+    }
 
-    rv <- list(compression = compression,
+    if (is.null(geno.compress))
+    {
+        if (compression == "LZMA_RA.ultra")
+            geno.compress <- "LZMA_RA.ultra:1M"
+        else if (compression == "LZMA_RA.ultra_max")
+            geno.compress <- "LZMA_RA.ultra_max:8M"
+    }
+
+    rv <- list(compression = paste0(compression, suf_b),
         mode = mode, float.mode = float.mode,
         geno.compress = ifelse(is.null(geno.compress), compression,
             geno.compress),
-        info.compress = ifelse(is.null(info.compress), compression,
+        info.compress = ifelse(is.null(info.compress),
+            ifelse(compression=="", "", paste0(compression, suf_i)),
             info.compress),
         format.compress = ifelse(is.null(format.compress),
-            ifelse(compression=="", "", paste0(compression, suffix)),
+            ifelse(compression=="", "", paste0(compression, suf_f)),
             format.compress),
-        index.compress = ifelse(is.null(index.compress), compression,
-            index.compress),
+        index.compress = index.compress,
         ...)
     class(rv) <- "SeqGDSStorageClass"
     return(rv)
@@ -653,20 +676,35 @@ seqTranspose <- function(gdsfile, var.name, compress=NULL, verbose=TRUE)
 # Optimize data by transposing
 #
 
-seqOptimize <- function(gdsfn, target=c("by.sample"),
+.optim_chrom <- function(gdsfile)
+{
+    n <- index.gdsn(gdsfile, "chromosome")
+    readmode.gdsn(n)
+    chr <- read.gdsn(n)
+    s <- rle(chr)
+    n1 <- add.gdsn(gdsfile, "@chrom_rle_val", s$values, replace=TRUE,
+        visible=FALSE)
+    n2 <- add.gdsn(gdsfile, "@chrom_rle_len", s$lengths, replace=TRUE,
+        visible=FALSE)
+    moveto.gdsn(n2, n)
+    moveto.gdsn(n1, n)
+    invisible()
+}
+
+seqOptimize <- function(gdsfn, target=c("chromosome", "by.sample"),
     format.var=TRUE, cleanup=TRUE, verbose=TRUE)
 {
     # check
-    stopifnot(is.character(gdsfn) & is.vector(gdsfn))
+    stopifnot(is.character(gdsfn), length(gdsfn)==1L)
     target <- match.arg(target)
     stopifnot(is.logical(format.var) || is.character(format.var))
-    stopifnot(is.logical(cleanup))
-    stopifnot(is.logical(verbose))
+    stopifnot(is.logical(cleanup), length(cleanup)==1L)
+    stopifnot(is.logical(verbose), length(verbose)==1L)
 
     gdsfile <- seqOpen(gdsfn, readonly=FALSE)
     on.exit({ seqClose(gdsfile) })
 
-    if (target == "by.sample")
+    if ("by.sample" %in% target)
     {
         # genotype
         if (verbose) cat("Working on 'genotype' ...\n")
@@ -700,6 +738,13 @@ seqOptimize <- function(gdsfn, target=c("by.sample"),
                 }
             }
         }
+    } else if ("chromosome" %in% target)
+    {
+        if (verbose)
+            cat("Adding run-length encoding for chromosome coding ...")
+        .optim_chrom(gdsfile)
+        if (verbose)
+            cat(" [Done]\n")
     }
 
     if (cleanup)

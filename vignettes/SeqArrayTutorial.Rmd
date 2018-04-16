@@ -140,7 +140,7 @@ The output lists all variables stored in the GDS file. At the first level, it st
 1. `sample.id`, a unique identifier for each sample.
 2. `variant.id`, a unique identifier for each variant.
 3. `position`, integer, the base position of each variant on the chromosome, and 0 or NA for unknown position.
-4. `chromosome`, character, the chromosome code, e.g., 1-22 for autosomes, X, Y, XY (the pseudoautosomal region), M (the mitochondrial probes), and `` (a blank string) for probes with unknown chromosome.
+4. `chromosome`, character, the chromosome code, e.g., 1-22 for autosomes, X, Y, XY (the pseudoautosomal region), M (the mitochondrial probes), and `""` (a blank string) for probes with unknown chromosome. The optional nodes ` @chrom_rle_val` and ` @chrom_rle_len` store the run-length encoding (RLE) representation of `chromosome` for faster indexing (requiring SeqArray>=v1.20.0).
 5. `allele`, character, reference and alternative alleles using comma as a separator.
 6. `genotype`, a folder:
     1. `data`, a 3-dimensional array for genotypic data, the first dimension refers to the number of ploidy, the second is sample and the third is variant.
@@ -367,6 +367,7 @@ Users can set a filter to samples and/or variants by `seqSetFilter()`. For examp
 ```{r}
 # set sample and variant filters
 seqSetFilter(genofile, sample.id=samp.id[c(2,4,6)])
+# or, seqSetFilter(genofile, sample.sel=c(2,4,6))
 set.seed(100)
 seqSetFilter(genofile, variant.id=sample(variant.id, 4))
 
@@ -378,6 +379,12 @@ Get genotypic data, it is a 3-dimensional array with respect to allele, sample a
 ```{r}
 # get genotypic data
 seqGetData(genofile, "genotype")
+```
+
+Get regular genotypes (i.e., genotype dosage, or the number of copies of reference allele), it is an integer matrix.
+```{r}
+# get the dosage of reference allele
+seqGetData(genofile, "$dosage")
 ```
 
 Now let us take a look at a variable-length dataset `annotation/info/AA`, which corresponds to the INFO column in the original VCF file. There are four variants, each variant has data with size ONE (`$length`), and data are saved in `$data` contiguously.
