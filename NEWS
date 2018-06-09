@@ -1,3 +1,13 @@
+CHANGES IN VERSION 1.20.1
+-------------------------
+
+BUG FIXES
+
+    o `seqExport()` fails to export haploid data (e.g., Y chromosome)
+
+    o `seqVCF2GDS()` fails to convert INFO variables when Number="R"
+
+
 CHANGES IN VERSION 1.20.0
 -------------------------
 
