@@ -41,10 +41,18 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
     n <- 0L
     for (i in ilist)
     {
+        is_vcf_fn <- FALSE
         if (!inherits(vcf.fn, "connection"))
         {
             infile <- file(vcf.fn[i], open="rt")
             on.exit(close(infile))
+            if (grepl("\\.bcf$", vcf.fn[i], ignore.case=TRUE))
+            {
+                s <- readChar(infile, 9L)
+                if (substr(s, 1L, 4L) != "BCF\002")
+                    stop(vcf.fn[i], " should be BCF2 format.")
+            } else
+                is_vcf_fn <- TRUE
         } else {
             infile <- vcf.fn
         }
@@ -59,18 +67,11 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
                 s <- substring(s, 3L)
                 ans <- c(ans, s)
             } else {
-                if (inherits(vcf.fn, "connection"))
+                samp.id <- scan(text=s, what=character(), sep="\t",
+                    quiet=TRUE)[-seq_len(9L)]
+                nSample <- length(samp.id)
+                if (is_vcf_fn)
                 {
-                    samp.id <- scan(text=s, what=character(0), sep="\t",
-                        quiet=TRUE)[-seq_len(9)]
-                    nSample <- length(samp.id)
-                } else {
-                    if (getnum)
-                    {
-                        s <- scan(text=s, what=character(0), sep="\t",
-                            quiet=TRUE)[-seq_len(9)]
-                        if (length(s) > nSample) nSample <- length(s)
-                    }
                     s <- readLines(infile, n=1L)
                     if (length(s) > 0L)
                     {
@@ -193,7 +194,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
     #########################################################
     # ploidy
 
-    if (!is.null(geno.text))
+    if (length(geno.text))
     {
         txt <- unlist(sapply(geno.text, function(s) {
             scan(text=s, what=character(), sep=":", quiet=TRUE, nmax=1) },
@@ -273,6 +274,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
         } else
             stop("INFO=", s[i])
     }
+    INFO <- unique(INFO)
     ans <- ans[ans$id != "INFO", ]
 
 
@@ -289,6 +291,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
         else
             stop("FILTER=", s[i])
     }
+    FILTER <- unique(FILTER)
     ans <- ans[ans$id != "FILTER", ]
 
 
@@ -311,6 +314,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
         } else
             stop("FORMAT=", s[i])
     }
+    FORMAT <- unique(FORMAT)
     ans <- ans[ans$id != "FORMAT", ]
 
 
@@ -328,6 +332,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
         } else
             stop("ALT=", s[i])
     }
+    ALT <- unique(ALT)
     ans <- ans[ans$id != "ALT", ]
 
 
@@ -345,6 +350,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
         } else
             stop("contig=", s[i])
     }
+    contig <- unique(contig)
     ans <- ans[ans$id != "contig", ]
 
 
@@ -353,6 +359,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
     reference <- NULL
     s <- ans$value[ans$id == "reference"]
     if (length(s) > 0L) reference <- s
+    reference <- unique(reference)
     ans <- ans[ans$id != "reference", ]
 
 
@@ -362,13 +369,10 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
     rv <- list(fileformat=fileformat, info=INFO, filter=FILTER, format=FORMAT,
         alt=ALT, contig=contig, assembly=assembly, reference=reference,
         header=ans, ploidy=ploidy)
+    rv$num.sample <- nSample
     if (getnum)
-    {
-        rv$num.sample <- nSample
         rv$num.variant <- nVariant
-    }
-    if (!is.null(samp.id))
-        rv$sample.id <- samp.id
+    rv$sample.id <- samp.id
     class(rv) <- "SeqVCFHeaderClass"
     rv
 }
@@ -483,7 +487,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             {
                 samp.id <- seqVCF_SampID(vcf.fn[i])
                 if (length(samp.id) <= 0L)
-                    stop("There is no sample in the VCF file.")
+                    message("No sample in '", vcf.fn[i], "'")
             } else {
                 tmp <- seqVCF_SampID(vcf.fn[i])
                 if (length(samp.id) != length(tmp))
@@ -545,6 +549,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         if (!is.character(storage.tmp))
             storage.tmp <- "customized"
         cat("    compression method: ", storage.tmp, "\n", sep="")
+        cat("    # of samples: ", length(header$sample.id), "\n", sep="")
         flush.console()
     }
 
@@ -601,9 +606,12 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             geno_format <- list(Description="Genotype")
         }
     } else {
-        message("\t",
-            "variable id in the FORMAT field should be defined ahead, ",
-            "and the undefined id is/are ignored during the conversion.")
+        if (length(samp.id) > 0L)
+        {
+            message("\t",
+                "variable id in the FORMAT field should be defined ahead, ",
+                "and the undefined id is/are ignored during the conversion.")
+        }
         geno_format <- list(Description="Genotype")
     }
 
@@ -782,8 +790,12 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     if (is.na(header$ploidy)) header$ploidy <- 2L
     if (header$ploidy > 0L)
     {
-        geno.node <- .AddVar(storage.option, varGeno, "data",
-            storage=genotype.storage, valdim=c(header$ploidy, nSamp, 0L))
+        if (nSamp > 0L)
+        {
+            geno.node <- .AddVar(storage.option, varGeno, "data",
+                storage=genotype.storage, valdim=c(header$ploidy, nSamp, 0L))
+        } else
+            geno.node <- NULL
     } else
         stop("Invalid ploidy.")
     node <- .AddVar(storage.option, varGeno, "@data", storage="uint8",
@@ -798,7 +810,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
 
     # add phase folder
     varPhase <- addfolder.gdsn(gfile, "phase")
-    if (header$ploidy > 1L)
+    if (header$ploidy > 1L && nSamp > 0L)
     {
         # add data
         if (header$ploidy > 2L)
@@ -923,7 +935,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                     if (!is.na(header$info$Version[i]))
                         put.attr.gdsn(node, "Version", header$info$Version[i])
 
-                    if (s %in% c(".", "A", "G"))
+                    if (s %in% c(".", "A", "G", "R"))
                     {
                         node <- .AddVar(storage.option, varInfo,
                             paste("@", header$info$ID[i], sep=""),
@@ -1002,7 +1014,8 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             put.attr.gdsn(node, "Type", header$format$Type[i])
             put.attr.gdsn(node, "Description", header$format$Description[i])
 
-            .AddVar(storage.option, node, "data", storage=mode, valdim=c(nSamp, 0L))
+            if (nSamp > 0L)
+                .AddVar(storage.option, node, "data", storage=mode, valdim=c(nSamp, 0L))
             .AddVar(storage.option, node, "@data", storage="int32", visible=FALSE)
         }
     }
@@ -1078,7 +1091,8 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                     linecnt, new.env())
 
                 filterlevels <- unique(c(filterlevels, v))
-                if (verbose) print(geno.node)
+                if (verbose && !is.null(geno.node))
+                    print(geno.node)
 
                 close(infile)
                 infile <- NULL
