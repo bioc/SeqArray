@@ -34,8 +34,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
 
     # parse and determine how many copies of genomes: haploid, diploid or others
     geno.text <- NULL
-    nSample <- 0L
-    nVariant <- 0L
+    nSample <- nVariant <- 0L
     samp.id <- NULL
 
     n <- 0L
@@ -78,7 +77,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
                         ss <- scan(text=s, what=character(), sep="\t", quiet=TRUE)
                         geno.text <- c(geno.text, ss[-seq_len(9L)])
                     }
-                    if (getnum)
+                    if (isTRUE(getnum))
                     {
                         nVariant <- nVariant + length(s) +
                             .Call(SEQ_VCF_NumLines, infile, FALSE)
@@ -267,9 +266,13 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
         {
             if (!is.element(tolower(v$Type),
                     c("integer", "float", "flag", "character", "string")))
-                stop("INFO=", s[i])
+            {
+                stop("Invalid data type (", v$Type, ")\nINFO=", s[i])
+            }
             if (!CheckNum(v$Number))
-                stop("INFO=", s[i])
+            {
+                stop("Invalid number (", v$Number, ")\nINFO=", s[i])
+            }
             INFO <- rbind(INFO, v)
         } else
             stop("INFO=", s[i])
@@ -307,9 +310,13 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
         {
             if (!is.element(tolower(v$Type),
                     c("integer", "float", "character", "string")))
-                stop("FORMAT=", s[i])
+            {
+                stop("Invalid data type (", v$Type, ")\nFORMAT=", s[i])
+            }
             if (!CheckNum(v$Number))
-                stop("FORMAT=", s[i])
+            {
+                stop("Invalid number (", v$Number, ")\nFORMAT=", s[i])
+            }
             FORMAT <- rbind(FORMAT, v)
         } else
             stop("FORMAT=", s[i])
