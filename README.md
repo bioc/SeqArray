@@ -13,21 +13,21 @@ SeqArray: Big Data Management of Whole-genome Sequence Variant Calls
 
 ## Features
 
-Big data management of whole-genome sequence variant calls with thousands of individuals: genotypic data (e.g., SNVs, indels and structural variation calls) and annotations in SeqArray files are stored in an array-oriented and compressed manner, with efficient data access using the R programming language.
+Big data management of whole-genome sequence variant calls with thousands of individuals: genotypic data (e.g., SNVs, indels and structural variation calls) and annotations in SeqArray GDS files are stored in an array-oriented and compressed manner, with efficient data access using the R programming language.
 
 The SeqArray package is built on top of Genomic Data Structure (GDS) data format, and defines required data structure for a SeqArray file. GDS is a flexible and portable data container with hierarchical structure to store multiple scalable array-oriented data sets. It is suited for large-scale datasets, especially for data which are much larger than the available random-access memory. It also offers the efficient operations specifically designed for integers of less than 8 bits, since a diploid genotype usually occupies fewer bits than a byte. Data compression and decompression are available with relatively efficient random access. A high-level R interface to GDS files is available in the package [gdsfmt](https://github.com/zhengxwen/gdsfmt).
 
 
 ## Bioconductor:
 
-Release Version: v1.20.1
+Release Version: v1.22.1
 
 [http://www.bioconductor.org/packages/release/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/release/bioc/html/SeqArray.html)
 
 * [Help Documents](http://zhengxwen.github.io/SeqArray/release/help/00Index.html)
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [R Integration](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/R_Integration.html), [Overview Slides](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/OverviewSlides.html)
 
-Development Version: v1.21.5
+Development Version: v1.23.0
 
 [http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html)
 
@@ -40,7 +40,7 @@ Development Version: v1.21.5
 Zheng X, Gogarten S, Lawrence M, Stilp A, Conomos M, Weir BS, Laurie C, Levine D (2017). SeqArray -- A storage-efficient high-performance data format for WGS variant calls. *Bioinformatics*. [DOI: 10.1093/bioinformatics/btx145](http://dx.doi.org/10.1093/bioinformatics/btx145).
 
 
-## Installation (requiring ≥ R_v3.3.0)
+## Installation (requiring ≥ R_v3.5.0)
 
 * Bioconductor repository:
 ```R
@@ -141,19 +141,28 @@ seqClose(f)
 
 ## Key Functions in the SeqArray Package
 
-| Function     | Description |
-|:-------------|:-------------------------------------------|
-| seqVCF2GDS   | Reformat VCF files [»](https://rdrr.io/bioc/SeqArray/man/seqVCF2GDS.html) |
-| seqSetFilter | Define a data subset of samples or variants [»](https://rdrr.io/bioc/SeqArray/man/seqSetFilter.html) |
-| seqGetData   | Get data from a SeqArray file with a defined filter [»](https://rdrr.io/bioc/SeqArray/man/seqGetData.html) |
-| seqApply     | Apply a user-defined function over array margins [»](https://rdrr.io/bioc/SeqArray/man/seqApply.html) |
-| seqParallel  | Apply functions in parallel [»](https://rdrr.io/bioc/SeqArray/man/seqParallel.html) |
+| Function      | Description |
+|:--------------|:-------------------------------------------|
+| seqVCF2GDS    | Reformat VCF files [»](https://rdrr.io/bioc/SeqArray/man/seqVCF2GDS.html) |
+| seqSetFilter  | Define a data subset of samples or variants [»](https://rdrr.io/bioc/SeqArray/man/seqSetFilter.html) |
+| seqGetData    | Get data from a SeqArray file with a defined filter [»](https://rdrr.io/bioc/SeqArray/man/seqGetData.html) |
+| seqApply      | Apply a user-defined function over array margins [»](https://rdrr.io/bioc/SeqArray/man/seqApply.html) |
+| seqBlockApply | Apply a user-defined function over array margins via blocking [»](https://rdrr.io/bioc/SeqArray/man/seqBlockApply.html) |
+| seqParallel   | Apply functions in parallel [»](https://rdrr.io/bioc/SeqArray/man/seqParallel.html) |
 | ...  | [»](https://rdrr.io/bioc/SeqArray/man/) |
 
 
-## Performance
+## Benchmarks
+
+### Reading genotypes in random sample subsets (BioC release 3.4 vs 3.8)
+
+(the number of samples is ~100k)
+
+![](vignettes/benchmark_rand_samp.svg)
+
 
 Update ... (in progress)
+
 
 
 ## Also See

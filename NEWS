@@ -1,3 +1,12 @@
+CHANGES IN VERSION 1.22.1
+-------------------------
+
+BUG FIXES
+
+    o export a haploid VCF file using `seqGDS2VCF()` (see:
+      https://github.com/zhengxwen/SeqArray/issues/39)
+
+
 CHANGES IN VERSION 1.22.0
 -------------------------
 
