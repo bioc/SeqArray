@@ -2,9 +2,9 @@
 \alias{SeqArray-package}
 \alias{SeqArray}
 \docType{package}
-\title{Big Data Management of Whole-Genome Sequence Variant Calls}
+\title{Data Management of Large-scale Whole-Genome Sequence Variant Calls}
 \description{
-    Big-data management of whole-genome sequencing variants.
+    Data management of large-scale whole-genome sequencing variants.
 }
 \details{
     As the cost of DNA sequencing rapidly decreases, whole-genome sequencing
@@ -113,8 +113,11 @@ seqApply(f, c(geno="genotype", phase="phase", qual="annotation/id"),
     FUN=function(x) print(x), as.is="none")
 
 # get the numbers of alleles per variant
-seqApply(f, "allele",
-    FUN=function(x) length(unlist(strsplit(x,","))), as.is="integer")
+head(seqApply(f, "allele",
+    FUN=function(x) length(unlist(strsplit(x,","))), as.is="integer"))
+# or
+head(seqGetData(f, "$num_allele"))
+
 
 
 ################################################################
@@ -124,7 +127,7 @@ seqResetFilter(f)
 
 # calculate the frequency of reference allele,
 #   a faster version could be obtained by C coding
-af <- seqApply(f, "genotype", FUN=function(x) mean(x==0, na.rm=TRUE),
+af <- seqApply(f, "genotype", FUN=function(x) mean(x==0L, na.rm=TRUE),
     as.is="double")
 length(af)
 summary(af)
