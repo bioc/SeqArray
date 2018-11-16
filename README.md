@@ -20,14 +20,14 @@ The SeqArray package is built on top of [Genomic Data Structure (GDS)](https://g
 
 ## Bioconductor:
 
-Release Version: v1.22.1
+Release Version: v1.22.2
 
 [http://www.bioconductor.org/packages/release/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/release/bioc/html/SeqArray.html)
 
 * [Help Documents](http://zhengxwen.github.io/SeqArray/release/help/00Index.html)
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [R Integration](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/R_Integration.html), [Overview Slides](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/OverviewSlides.html)
 
-Development Version: v1.23.0
+Development Version: v1.23.1
 
 [http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html)
 
@@ -154,7 +154,7 @@ seqClose(f)
 
 ## Benchmarks
 
-### Reading genotypes in random sample subsets (BioC release 3.4 vs 3.8)
+### Reading genotypes in random sample subsets (BioC release 3.8 vs 3.4)
 
 (the number of samples is ~100k)
 
@@ -170,3 +170,8 @@ Update ... (in progress)
 [PySeqArray](https://github.com/CoreArray/PySeqArray): data manipulation of whole-genome sequencing variant data in Python
 
 [JSeqArray.jl](https://github.com/CoreArray/JSeqArray.jl): data manipulation of whole-genome sequencing variant data in Julia
+
+
+## Bug Fixes
+
+* v1.22.0: fix `seqVCF2GDS()` and `seqBCF2GDS()` since reading from connections in text mode is buffered in R >= v3.5.0
