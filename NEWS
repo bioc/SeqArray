@@ -1,10 +1,22 @@
-CHANGES IN VERSION 1.22.1
+CHANGES IN VERSION 1.22.1-1.22.3
 -------------------------
+
+UTILITIES
+
+    o more information in `seqDelete()`
+
+    o a new option 'scenario' in `seqVCF2GDS()` and `seqBCF2GDS()`
 
 BUG FIXES
 
     o export a haploid VCF file using `seqGDS2VCF()` (see:
       https://github.com/zhengxwen/SeqArray/issues/39)
+
+    o export VCF without any FORMAT data in `seqGDS2VCF()`
+
+    o export GDS without genotypes in `seqExport()`
+
+    o fix parallel file writing in seqVCF2GDS(), when no genotype
 
 
 CHANGES IN VERSION 1.22.0
@@ -42,7 +54,7 @@ BUG FIXES
       files (i.e., VCF with no sample)
 
     o fix `seqVCF2GDS()` and `seqBCF2GDS()` since reading from connections in
-      text mode is buffered for R >= v3.5.0
+      text mode is buffered in R >= v3.5.0
 
 
 CHANGES IN VERSION 1.20.1

@@ -3,7 +3,7 @@
 # Package Name: SeqArray
 #
 # Description:
-#     Big Data Management of Whole-Genome Sequence Variant Calls
+#     Data Management of Large-scale Whole-Genome Sequence Variant Calls
 #
 
 
@@ -430,8 +430,8 @@ seqVCF_SampID <- function(vcf.fn)
 seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     storage.option="LZMA_RA", info.import=NULL, fmt.import=NULL,
     genotype.var.name="GT", ignore.chr.prefix="chr",
-    reference=NULL, start=1L, count=-1L, optimize=TRUE, raise.error=TRUE,
-    digest=TRUE, parallel=FALSE, verbose=TRUE)
+    scenario=c("general", "imputation"), reference=NULL, start=1L, count=-1L,
+    optimize=TRUE, raise.error=TRUE, digest=TRUE, parallel=FALSE, verbose=TRUE)
 {
     # check
     if (!inherits(vcf.fn, "connection"))
@@ -439,19 +439,31 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     stopifnot(is.character(out.fn), length(out.fn)==1L)
     stopifnot(is.null(header) | inherits(header, "SeqVCFHeaderClass"))
 
+    scenario <- match.arg(scenario)
     storage.tmp <- storage.option
     if (is.character(storage.option))
+    {
         storage.option <- seqStorageOption(storage.option)
-    stopifnot(inherits(storage.option, "SeqGDSStorageClass"))
+        if (scenario == "imputation")
+        {
+            storage.option$mode <- c(
+                `annotation/format/DS`="packedreal16:offset=0,scale=0.0001",
+                `annotation/format/GP`="packedreal16:offset=0,scale=0.0001"
+            )
+        }
+    } else {
+        scenario <- ""
+    }
 
+    stopifnot(inherits(storage.option, "SeqGDSStorageClass"))
     stopifnot(is.character(genotype.var.name), length(genotype.var.name)==1L)
     stopifnot(!is.na(genotype.var.name))
 
     stopifnot(is.null(info.import) | is.character(info.import))
     stopifnot(is.null(fmt.import) | is.character(fmt.import))
     stopifnot(is.character(ignore.chr.prefix), length(ignore.chr.prefix)>0L)
-    stopifnot(is.null(reference) | is.character(reference))
 
+    stopifnot(is.null(reference) | is.character(reference))
     stopifnot(is.numeric(start), length(start)==1L)
     stopifnot(is.numeric(count), length(count)==1L)
 
@@ -557,6 +569,14 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             storage.tmp <- "customized"
         cat("    compression method: ", storage.tmp, "\n", sep="")
         cat("    # of samples: ", length(header$sample.id), "\n", sep="")
+        if (identical(scenario, "imputation"))
+        {
+            cat("    scenario: imputation\n")
+            if ("DS" %in% header$format$ID)
+                cat("        annotation/format/DS: packedreal16\n")
+            if ("GP" %in% header$format$ID)
+                cat("        annotation/format/GP: packedreal16\n")
+        }
         flush.console()
     }
 
@@ -683,8 +703,8 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             # conversion in parallel
             seqParallel(parallel, NULL, FUN = function(
                 vcf.fn, header, storage.option, info.import, fmt.import,
-                genotype.var.name, ignore.chr.prefix, optim, raise.err,
-                ptmpfn, psplit, num_array)
+                genotype.var.name, ignore.chr.prefix, scenario, optim,
+                raise.err, ptmpfn, psplit, num_array)
             {
                 library("SeqArray")
 
@@ -698,8 +718,8 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                     fmt.import=fmt.import, genotype.var.name=genotype.var.name,
                     ignore.chr.prefix=ignore.chr.prefix,
                     start = psplit[[1L]][i], count = psplit[[2L]][i],
-                    optimize=optim, raise.error=raise.err, digest=FALSE,
-                    parallel=FALSE, verbose=FALSE)
+                    optimize=optim, scenario=scenario, raise.error=raise.err,
+                    digest=FALSE, parallel=FALSE, verbose=FALSE)
 
                 invisible()
 
@@ -707,7 +727,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                 vcf.fn=vcf.fn, header=header, storage.option=storage.option,
                 info.import=info.import, fmt.import=fmt.import,
                 genotype.var.name=genotype.var.name,
-                ignore.chr.prefix=ignore.chr.prefix,
+                ignore.chr.prefix=ignore.chr.prefix, scenario=scenario,
                 optim=optimize, raise.err=raise.error,
                 ptmpfn=ptmpfn, psplit=psplit, num_array=num_array)
 
@@ -1167,7 +1187,11 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             tmpgds <- seqOpen(fn)
             # merge variables
             for (nm in varnm)
-                append.gdsn(index.gdsn(gfile, nm), index.gdsn(tmpgds, nm))
+            {
+                n <- index.gdsn(tmpgds, nm, silent=TRUE)
+                if (!is.null(n))
+                    append.gdsn(index.gdsn(gfile, nm), n)
+            }
             # merge filter variable (a factor variable)
             filtervar <- c(filtervar, as.character(
                 read.gdsn(index.gdsn(tmpgds, "annotation/filter"))))
@@ -1202,9 +1226,25 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         put.attr.gdsn(varFilter, "Description", dp)
     }
 
+    # RLE-coded chromosome
     .optim_chrom(gfile)
+
+    # if there is no genotype
+    n <- index.gdsn(gfile, "genotype/data", silent=TRUE)
+    if (is.null(n) || prod(objdesp.gdsn(n)$dim) <= 0)
+    {
+        for (nm in c("genotype/data", "genotype/@data", "genotype/extra.index",
+            "genotype/extra", "phase/data", "phase/extra.index", "phase/extra"))
+        {
+            n <- index.gdsn(gfile, nm, silent=TRUE)
+            if (!is.null(n)) delete.gdsn(n)
+        }
+    }
+
+    # create hash
     .DigestFile(gfile, digest, verbose)
 
+    # close the GDS file
     closefn.gds(gfile)
     gfile <- NULL
 
@@ -1240,8 +1280,9 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
 
 seqBCF2GDS <- function(bcf.fn, out.fn, header=NULL, storage.option="LZMA_RA",
     info.import=NULL, fmt.import=NULL, genotype.var.name="GT",
-    ignore.chr.prefix="chr", reference=NULL, optimize=TRUE, raise.error=TRUE,
-    digest=TRUE, bcftools="bcftools", verbose=TRUE)
+    ignore.chr.prefix="chr", scenario=c("general", "imputation"),
+    reference=NULL, optimize=TRUE, raise.error=TRUE, digest=TRUE,
+    bcftools="bcftools", verbose=TRUE)
 {
     # check
     stopifnot(is.character(bcf.fn), length(bcf.fn)==1L)
@@ -1267,7 +1308,7 @@ seqBCF2GDS <- function(bcf.fn, out.fn, header=NULL, storage.option="LZMA_RA",
         storage.option=storage.option,
         info.import=info.import, fmt.import=fmt.import,
         genotype.var.name=genotype.var.name,
-        ignore.chr.prefix=ignore.chr.prefix,
+        ignore.chr.prefix=ignore.chr.prefix, scenario=scenario,
         reference=reference, optimize=optimize, raise.error=raise.error,
         digest=digest, verbose=verbose)
 
