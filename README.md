@@ -13,19 +13,20 @@ SeqArray: Data Management of Large-scale Whole-genome Sequence Variant Calls
 
 ## Features
 
-Data management of whole-genome sequence variant calls with thousands of individuals: genotypic data (e.g., SNVs, indels and structural variation calls) and annotations in SeqArray GDS files are stored in an array-oriented and compressed manner, with efficient data access using the R programming language.
+Data management of whole-genome sequence variant calls with hundreds of thousands of individuals: genotypic data (e.g., SNVs, indels and structural variation calls) and annotations in SeqArray GDS files are stored in an array-oriented and compressed manner, with efficient data access using the R programming language.
 
 The SeqArray package is built on top of [Genomic Data Structure (GDS)](https://github.com/zhengxwen/gdsfmt) data format, and defines required data structure for a SeqArray file. GDS is a flexible and portable data container with hierarchical structure to store multiple scalable array-oriented data sets. It is suited for large-scale datasets, especially for data which are much larger than the available random-access memory. It also offers the efficient operations specifically designed for integers of less than 8 bits, since a diploid genotype usually occupies fewer bits than a byte. Data compression and decompression are available with relatively efficient random access. A high-level R interface to GDS files is available in the package [gdsfmt](https://github.com/zhengxwen/gdsfmt).
 
 
 ## Bioconductor:
 
-Release Version: v1.22.2
+Release Version: v1.22.3
 
 [http://www.bioconductor.org/packages/release/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/release/bioc/html/SeqArray.html)
 
 * [Help Documents](http://zhengxwen.github.io/SeqArray/release/help/00Index.html)
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [R Integration](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/R_Integration.html), [Overview Slides](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/OverviewSlides.html)
+* [News](http://www.bioconductor.org/packages/release/bioc/news/SeqArray/NEWS)
 
 Development Version: v1.23.1
 
@@ -33,6 +34,7 @@ Development Version: v1.23.1
 
 * [Help Documents](http://zhengxwen.github.io/SeqArray/devel/help/00Index.html)
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/devel/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [R Integration](http://www.bioconductor.org/packages/devel/bioc/vignettes/SeqArray/inst/doc/R_Integration.html), [Overview Slides](http://www.bioconductor.org/packages/devel/bioc/vignettes/SeqArray/inst/doc/OverviewSlides.html)
+* [News](http://bioconductor.org/packages/devel/bioc/news/SeqArray/NEWS)
 
 
 ## Citation
@@ -154,15 +156,23 @@ seqClose(f)
 
 ## Benchmarks
 
-### Reading genotypes in random sample subsets (BioC release 3.8 vs 3.4)
+### 1. Reading genotypes in random sample subsets (BioC release 3.8 vs 3.4)
 
 (the number of samples is ~100k)
 
 ![](vignettes/benchmark_rand_samp.svg)
 
+*Update ... (in progress)*
 
-Update ... (in progress)
 
+## File Format Conversion
+
+[gds2bgen](https://github.com/zhengxwen/gds2bgen): Format Conversion Between GDS and BGEN
+
+
+## Bug Fixes
+
+* v1.22.0: fix `seqVCF2GDS()` and `seqBCF2GDS()` since reading from connections in text mode is buffered in R >= v3.5.0
 
 
 ## Also See
@@ -170,8 +180,3 @@ Update ... (in progress)
 [PySeqArray](https://github.com/CoreArray/PySeqArray): data manipulation of whole-genome sequencing variant data in Python
 
 [JSeqArray.jl](https://github.com/CoreArray/JSeqArray.jl): data manipulation of whole-genome sequencing variant data in Julia
-
-
-## Bug Fixes
-
-* v1.22.0: fix `seqVCF2GDS()` and `seqBCF2GDS()` since reading from connections in text mode is buffered in R >= v3.5.0

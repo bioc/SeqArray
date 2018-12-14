@@ -8,13 +8,14 @@
 \usage{
 seqVCF2GDS(vcf.fn, out.fn, header=NULL, storage.option="LZMA_RA",
     info.import=NULL, fmt.import=NULL, genotype.var.name="GT",
-    ignore.chr.prefix="chr", reference=NULL, start=1L, count=-1L,
-    optimize=TRUE, raise.error=TRUE, digest=TRUE, parallel=FALSE,
-    verbose=TRUE)
+    ignore.chr.prefix="chr", scenario=c("general", "imputation"),
+    reference=NULL, start=1L, count=-1L, optimize=TRUE, raise.error=TRUE,
+    digest=TRUE, parallel=FALSE, verbose=TRUE)
 seqBCF2GDS(bcf.fn, out.fn, header=NULL, storage.option="LZMA_RA",
     info.import=NULL, fmt.import=NULL, genotype.var.name="GT",
-    ignore.chr.prefix="chr", reference=NULL, optimize=TRUE, raise.error=TRUE,
-    digest=TRUE, bcftools="bcftools", verbose=TRUE)
+    ignore.chr.prefix="chr", scenario=c("general", "imputation"),
+    reference=NULL, optimize=TRUE, raise.error=TRUE, digest=TRUE,
+    bcftools="bcftools", verbose=TRUE)
 }
 \arguments{
     \item{vcf.fn}{the file name(s) of VCF format; or a \code{\link{connection}}
@@ -26,10 +27,11 @@ seqBCF2GDS(bcf.fn, out.fn, header=NULL, storage.option="LZMA_RA",
     \item{storage.option}{specify the storage and compression option,
         "ZIP_RA" (\code{\link{seqStorageOption}("ZIP_RA")}); or
         "LZMA_RA" to use LZMA compression algorithm with higher compression
-        ratio by default; "ZIP_RA.max" and "LZMA_RA.max" correspond to the
-        algorithms with a maximum compression level; the suffix "_RA" indicates
-        that fine-level random access is available; see more details at
-        \code{\link{seqStorageOption}}}
+        ratio by default; or "LZ4_RA" to use an extremely fast compression and
+        decompression algorithm. "ZIP_RA.max", "LZMA_RA.max" and "LZ4_RA.max"
+        correspond to the algorithms with a maximum compression level; the
+        suffix "_RA" indicates that fine-level random access is available; see
+        more details at \code{\link{seqStorageOption}}}
     \item{info.import}{characters, the variable name(s) in the INFO field
         for import; or \code{NULL} for all variables}
     \item{fmt.import}{characters, the variable name(s) in the FORMAT field
@@ -39,6 +41,9 @@ seqBCF2GDS(bcf.fn, out.fn, header=NULL, storage.option="LZMA_RA",
     \item{ignore.chr.prefix}{a vector of character, indicating the prefix of
         chromosome which should be ignored, like "chr"; it is not
         case-sensitive}
+    \item{scenario}{"general": use float32 to store floating-point numbers
+        (by default); "imputation": use packedreal16 to store DS and GP in the
+        FORMAT field with four decimal place accuracy}
     \item{reference}{genome reference, like "hg19", "GRCh37"; if the genome
         reference is not available in VCF files, users could specify the
         reference here}
