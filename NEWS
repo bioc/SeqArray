@@ -1,9 +1,11 @@
-CHANGES IN VERSION 1.23.1-1.23.5
+CHANGES IN VERSION 1.23.1-1.23.6
 -------------------------
 
-BUG FIXES
+NEW FEATURES
 
-    o `seqMerge()` merges GDS files without genotypes
+    o a new function `seqResetVariantID()`
+
+    o a new option in `seqRecompress(, compress="none")` to uncompress all data
 
 
 CHANGES IN VERSION 1.22.1-1.22.3
