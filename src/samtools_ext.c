@@ -50,7 +50,7 @@ static void init_bgzf()
 
 static void bzfile_close(Rconnection con)
 {
-	if (!con->private)
+	if (con->private)
 	{
 		(*bgzf_close)((BGZF*)con->private);
 		con->private = NULL;
