@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.23.1-1.23.6
+CHANGES IN VERSION 1.23.1-1.23.8
 -------------------------
 
 NEW FEATURES
@@ -6,6 +6,21 @@ NEW FEATURES
     o a new function `seqResetVariantID()`
 
     o a new option in `seqRecompress(, compress="none")` to uncompress all data
+
+BUG FIXES
+
+    o the bgzf VCF file is truncated in `seqGDS2VCF()` since the file is not
+      closed appropriately
+
+
+CHANGES IN VERSION 1.22.4
+-------------------------
+
+BUG FIXES
+
+    o `seqSetFilter(, sample.id=)` fails to correctly select samples in rare cases
+      (since SeqArray>=v1.22.0 uses the distribution of selected samples to optimize
+      the data access of genotypes, see https://github.com/zhengxwen/SeqArray/issues/48)
 
 
 CHANGES IN VERSION 1.22.1-1.22.3

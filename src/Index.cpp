@@ -626,7 +626,10 @@ TSelection::TSampStruct *TSelection::GetStructSample()
 				// TRUE block: short, but far away from the next TRUE block
 				if (last.length > 0)
 				{
+					// merge with the last block
 					last.length = (pE - pSample) * numPloidy - last.offset;
+					if (!last.sel)
+						last.sel = pFlagGenoSel + last.offset;
 					pSampList.push_back(last);
 					last.length = 0;
 				} else {
@@ -639,6 +642,7 @@ TSelection::TSampStruct *TSelection::GetStructSample()
 				// sparse
 				if (last.length > 0)
 				{
+					// merge with the last block
 					last.length = (pE - pSample) * numPloidy - last.offset;
 					if (!last.sel)
 						last.sel = pFlagGenoSel + last.offset;
@@ -657,6 +661,22 @@ TSelection::TSampStruct *TSelection::GetStructSample()
 			pSampList.push_back(last);
 		ss.length = ss.offset = 0; ss.sel = NULL;
 		pSampList.push_back(ss);
+	}
+
+	{
+		// check
+		ssize_t num = 0;
+		TSampStruct *p = &pSampList[0];
+		for (; p->length > 0; p++)
+		{
+			if (p->sel)
+				num += GetNumOfTRUE(p->sel, p->length);
+			else
+				num += p->length;
+		}
+		ssize_t num_samp = GetNumOfTRUE(pSample, numSamp);
+		if (num_samp*numPloidy != num)
+			throw ErrSeqArray("Internal error when preparing structure for selected samples, please email to zhengxwen@gmail.com.");
 	}
 
 	return &pSampList[0];
@@ -1121,9 +1141,15 @@ void CProgress::ShowProgress()
 			// show
 			if (NewLine)
 			{
-				ConnPutText(File, "[%s] %2.0f%%, ETC: %s\n", bar, p, time_str(s));
+				ConnPutText(File, "[%s] %2.0f%%, ETC: %s", bar, p, time_str(s));
+				if (R_Process_Count && R_Process_Index && *R_Process_Count > 1)
+					ConnPutText(File, " (process %d)", *R_Process_Index);
+				ConnPutText(File, "\n");
 			} else {
-				ConnPutText(File, "\r[%s] %2.0f%%, ETC: %s    ", bar, p, time_str(s));
+				ConnPutText(File, "\r[%s] %2.0f%%, ETC: %s", bar, p, time_str(s));
+				if (R_Process_Count && R_Process_Index && *R_Process_Count > 1)
+					ConnPutText(File, " (process %d)", *R_Process_Index);
+				ConnPutText(File, "    ");
 				if (Counter >= TotalCount) ConnPutText(File, "\n");
 			}
 		} else {
@@ -1133,14 +1159,19 @@ void CProgress::ShowProgress()
 			if (NewLine)
 			{
 				if (Counter > 0)
-					ConnPutText(File, "[:%s (%dk lines)]\n", s.c_str(), Counter/1000);
+					ConnPutText(File, "[:%s (%dk lines)]", s.c_str(), Counter/1000);
 				else
-					ConnPutText(File, "[: (0 line)]\n");
+					ConnPutText(File, "[: (0 line)]");
+				if (R_Process_Count && R_Process_Index && *R_Process_Count > 1)
+					ConnPutText(File, " (process %d)", *R_Process_Index);
+				ConnPutText(File, "\n");
 			} else {
 				if (Counter > 0)
 					ConnPutText(File, "\r[:%s (%dk lines)]", s.c_str(), Counter/1000);
 				else
 					ConnPutText(File, "\r[: (0 line)]");
+				if (R_Process_Count && R_Process_Index && *R_Process_Count > 1)
+					ConnPutText(File, " (process %d)", *R_Process_Index);
 			}
 		}
 		(*File->fflush)(File);
@@ -1199,7 +1230,10 @@ void CProgressStdOut::ShowProgress()
 		} else if ((interval >= 5) || (Counter <= 0))
 		{
 			_last_time = now;
-			Rprintf("\r[%s] %2.0f%%, ETC: %s    ", bar, p, time_str(s));
+			Rprintf("\r[%s] %2.0f%%, ETC: %s", bar, p, time_str(s));
+			if (Counter>0 && R_Process_Count && R_Process_Index && *R_Process_Count > 1)
+				Rprintf(" (process %d)", *R_Process_Index);
+			Rprintf("    ");
 		}
 	}
 }
