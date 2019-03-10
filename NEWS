@@ -1,3 +1,12 @@
+CHANGES IN VERSION 1.22.6
+-------------------------
+
+BUG FIXES
+
+    o invalid chromosomes and position in the output of `seqMerge()` when merging
+      different samples but same variants
+
+
 CHANGES IN VERSION 1.22.5
 -------------------------
 
