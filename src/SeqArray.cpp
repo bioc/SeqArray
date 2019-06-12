@@ -1,6 +1,6 @@
 // ===========================================================
 //
-// SeqArray.cpp: the C/C++ codes for the SeqArray package
+// SeqArray.cpp: the C++ codes for the SeqArray package
 //
 // Copyright (C) 2013-2019    Xiuwen Zheng
 //
@@ -860,6 +860,7 @@ inline static C_BOOL *SKIP_SELECTION(size_t num, C_BOOL *p)
 	return p;
 }
 
+
 /// split the selected variants according to multiple processes
 COREARRAY_DLL_EXPORT SEXP SEQ_SplitSelection(SEXP gdsfile, SEXP split,
 	SEXP index, SEXP n_process, SEXP selection_flag)
@@ -930,6 +931,75 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SplitSelection(SEXP gdsfile, SEXP split,
 			for (; ans_n > 0; ans_n--) *p++ = TRUE;
 		} else {
 			rv_ans = ScalarInteger(ans_n);
+		}
+
+	COREARRAY_CATCH
+}
+
+
+/// split the selected variants according to multiple processes
+COREARRAY_DLL_EXPORT SEXP SEQ_SplitSelectionX(SEXP gdsfile, SEXP index, SEXP split,
+	SEXP sel_idx, SEXP sel_variant, SEXP sel_sample, SEXP bl_size, SEXP selection_flag,
+	SEXP totlen)
+{
+	int job_idx = Rf_asInteger(index) - 1;  // starting from 0
+	const bool split_by_variant = Rf_asLogical(split)==TRUE;
+	const bool sel_flag = Rf_asLogical(selection_flag)==TRUE;
+	const int *p_sel_idx = INTEGER(sel_idx);
+	const int blsize = Rf_asInteger(bl_size);
+	const int tlen = Rf_asInteger(totlen);
+
+	COREARRAY_TRY
+
+		// selection object
+		CFileInfo &File = GetFileInfo(gdsfile);
+		TSelection &s = File.Selection();
+
+		// clear and initialize
+		int ntot;
+		C_BOOL *base_sel, *p_sel;
+		if (split_by_variant)
+		{
+			ntot = File.VariantNum();
+			base_sel = (C_BOOL*)RAW(sel_variant);
+			p_sel = s.pVariant;
+			s.ClearSelectVariant();
+		} else {
+			ntot = File.SampleNum();
+			base_sel = (C_BOOL*)RAW(sel_sample);
+			p_sel = s.pSample;
+			memset(p_sel, 0, ntot);
+		}
+
+		// set selection
+		const int st = p_sel_idx[job_idx] - 1;
+		int n = 0, i = st;
+		for (; n<blsize && i<ntot; i++)
+		{
+			if (base_sel[i])
+				{ p_sel[i] = TRUE; n++; }
+		}
+
+		// finalize
+		if (split_by_variant)
+		{
+			s.varTrueNum = n;
+			s.varStart = st; s.varEnd = i;
+		} else {
+			s.ClearStructSample();
+		}
+
+		// ---------------------------------------------------
+		// output
+		if (sel_flag)
+		{
+			rv_ans = NEW_LOGICAL(tlen);
+			int *p = INTEGER(rv_ans);
+			memset((void*)p, 0, sizeof(int) * size_t(tlen));
+			p += blsize * job_idx;
+			for (; n > 0; n--) *p++ = TRUE;
+		} else {
+			rv_ans = ScalarInteger(n);
 		}
 
 	COREARRAY_CATCH
@@ -1041,8 +1111,8 @@ COREARRAY_DLL_EXPORT SEXP SEQ_System()
 	COREARRAY_TRY
 
 		int nProtect = 0;
-		rv_ans = PROTECT(NEW_LIST(2));
-		SEXP nm = PROTECT(NEW_CHARACTER(2));
+		rv_ans = PROTECT(NEW_LIST(3));
+		SEXP nm = PROTECT(NEW_CHARACTER(3));
 		nProtect += 2;
 		SET_NAMES(rv_ans, nm);
 
@@ -1050,9 +1120,25 @@ COREARRAY_DLL_EXPORT SEXP SEQ_System()
 		SET_ELEMENT(rv_ans, 0, ScalarInteger(GDS_Mach_GetNumOfCores()));
 		SET_STRING_ELT(nm, 0, mkChar("num.logical.core"));
 
+		// compiler
+		SEXP Compiler = PROTECT(NEW_CHARACTER(2));
+		nProtect ++;
+		SET_ELEMENT(rv_ans, 1, Compiler);
+		SET_STRING_ELT(nm, 1, mkChar("compiler"));
+	#ifdef __VERSION__
+		SET_STRING_ELT(Compiler, 0, mkChar(__VERSION__));
+	#endif
+	#ifdef __GNUC__
+		char buf_compiler[128] = { 0 };
+		#ifndef __GNUC_PATCHLEVEL__
+		#   define __GNUC_PATCHLEVEL__    0
+		#endif
+		sprintf(buf_compiler, "GNUG_v%d.%d.%d", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+		SET_STRING_ELT(Compiler, 1, mkChar(buf_compiler));
+	#endif
+
 		// compiler flags
 		vector<string> ss;
-
 	#ifdef COREARRAY_SIMD_SSE
 		ss.push_back("SSE");
 	#endif
@@ -1077,6 +1163,21 @@ COREARRAY_DLL_EXPORT SEXP SEQ_System()
 	#ifdef COREARRAY_SIMD_AVX2
 		ss.push_back("AVX2");
 	#endif
+	#ifdef COREARRAY_SIMD_AVX512F
+		ss.push_back("AVX512F");
+	#endif
+	#ifdef COREARRAY_SIMD_AVX512BW
+		ss.push_back("AVX512BW");
+	#endif
+	#ifdef COREARRAY_SIMD_AVX512CD
+		ss.push_back("AVX512CD");
+	#endif
+	#ifdef COREARRAY_SIMD_AVX512DQ
+		ss.push_back("AVX512DQ");
+	#endif
+	#ifdef COREARRAY_SIMD_AVX512VL
+		ss.push_back("AVX512VL");
+	#endif
 	#ifdef COREARRAY_SIMD_FMA
 		ss.push_back("FMA");
 	#endif
@@ -1088,8 +1189,8 @@ COREARRAY_DLL_EXPORT SEXP SEQ_System()
 	#endif
 		SEXP SIMD = PROTECT(NEW_CHARACTER(ss.size()));
 		nProtect ++;
-		SET_ELEMENT(rv_ans, 1, SIMD);
-		SET_STRING_ELT(nm, 1, mkChar("compiler.flag"));
+		SET_ELEMENT(rv_ans, 2, SIMD);
+		SET_STRING_ELT(nm, 2, mkChar("compiler.flag"));
 		for (int i=0; i < (int)ss.size(); i++)
 			SET_STRING_ELT(SIMD, i, mkChar(ss[i].c_str()));
 
@@ -1127,6 +1228,41 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Debug(SEXP gdsfile)
 			(int)Sel.varEnd, (int)Sel.varTrueNum);
 
 		return R_NilValue;
+	COREARRAY_CATCH
+}
+
+
+
+// ===========================================================
+// Progress object
+// ===========================================================
+
+static void free_progress(SEXP ref)
+{
+    CProgressStdOut *obj = (CProgressStdOut*)R_ExternalPtrAddr(ref);
+    if (obj) delete obj;
+}
+
+/// Get a progress bar object
+COREARRAY_DLL_EXPORT SEXP SEQ_Progress(SEXP Count)
+{
+	COREARRAY_TRY
+		C_Int64 TotalCount = (C_Int64)Rf_asReal(Count);
+		CProgressStdOut *obj = new CProgressStdOut(TotalCount, true);
+		rv_ans = PROTECT(R_MakeExternalPtr(obj, R_NilValue, R_NilValue));
+		R_RegisterCFinalizerEx(rv_ans, free_progress, TRUE);
+		Rf_setAttrib(rv_ans, R_ClassSymbol, mkString("SeqClass_Progress"));
+		UNPROTECT(1);
+	COREARRAY_CATCH
+}
+
+/// Get a progress bar object
+COREARRAY_DLL_EXPORT SEXP SEQ_ProgressAdd(SEXP ref, SEXP inc)
+{
+	COREARRAY_TRY
+		C_Int64 v = (C_Int64)Rf_asReal(inc);
+		CProgressStdOut *obj = (CProgressStdOut*)R_ExternalPtrAddr(ref);
+		if (obj) obj->Forward(v);
 	COREARRAY_CATCH
 }
 
@@ -1226,7 +1362,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 		CALL(SEQ_SetSpaceVariant, 4),       CALL(SEQ_SetSpaceVariant2, 4),
 		CALL(SEQ_SetChrom, 7),
 
-		CALL(SEQ_SplitSelection, 5),
+		CALL(SEQ_SplitSelection, 5),        CALL(SEQ_SplitSelectionX, 9),
 		CALL(SEQ_GetSpace, 2),
 
 		CALL(SEQ_Summary, 2),               CALL(SEQ_System, 0),
@@ -1241,6 +1377,8 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 		CALL(SEQ_IntAssign, 2),
 
 		CALL(SEQ_bgzip_create, 1),
+
+		CALL(SEQ_Progress, 1),              CALL(SEQ_ProgressAdd, 2),
 
 		{ NULL, NULL, 0 }
 	};
