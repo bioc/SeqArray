@@ -7,6 +7,12 @@
 
 
 #######################################################################
+# Package-wide variable
+
+.packageEnv <- new.env()
+
+
+#######################################################################
 # Get the numbers of selected samples and variants
 #
 .seldim <- function(gdsfile)
@@ -135,7 +141,6 @@
         else
             sprintf("%g bytes", x)
     }
-
     sapply(s, size)
 }
 
@@ -347,12 +352,26 @@
 
 #######################################################################
 # Parallel functions
+#   cl -- a cluster object
+#   .num -- the total number of segments
+#   .fun -- a user-defined function
+#   .combinefun -- a user-defined function for combining the returned values
+#   .stopcluster -- TRUE/FALSE, if TRUE stop cluster nodes after running the jobs
+#   .updatefun -- a user-defined function for updating progress (could be NULL)
 #
-.DynamicClusterCall <- function(cl, .num, .fun, .combinefun,
-    .stopcluster, ...)
+.DynamicClusterCall <- function(cl, .num, .fun, .combinefun, .updatefun=NULL,
+    .stopcluster=FALSE, ...)
 {
     # in order to use the internal functions accessed by ':::'
     # the functions are all defined in 'parallel/R/snow.R'
+
+    # check
+    stopifnot(is.null(cl) | inherits(cl, "cluster"))
+    stopifnot(is.numeric(.num))
+    stopifnot(is.function(.fun))
+    stopifnot(is.character(.combinefun) | is.function(.combinefun))
+    stopifnot(is.logical(.stopcluster))
+    stopifnot(is.null(.updatefun) | is.function(.updatefun))
 
     .SendData <- parse(text=
         "parallel:::sendData(con, list(type=type,data=value,tag=tag))")
@@ -376,12 +395,6 @@
 
 
     #################################################################
-    # check
-    stopifnot(is.null(cl) | inherits(cl, "cluster"))
-    stopifnot(is.numeric(.num))
-    stopifnot(is.function(.fun))
-    stopifnot(is.character(.combinefun) | is.function(.combinefun))
-    stopifnot(is.logical(.stopcluster))
 
     if (!is.null(cl))
     {
@@ -436,17 +449,18 @@
                         ans <- .combinefun(ans, dv)
                 } else if (.combinefun %in% c("unlist", "list"))
                 {
-                    ans[[d$tag]] <- dv
+                    # assignment NULL would remove it from the list
+                    if (!is.null(dv)) ans[[d$tag]] <- dv
                 }
+
+                if (!is.null(.updatefun)) .updatefun(i)
 
                 if (stopflag)
                     message(sprintf("Stop \"job %d\".", d$node))
             }
         }
     } else {
-
         ####  serial implementation
-
         if (is.function(.combinefun))
         {
             ans <- NULL
@@ -466,10 +480,102 @@
         {
             ans <- vector("list", .num)
             for (i in seq_len(.num))
-                ans[[i]] <- .fun(i, ...)
+            {
+                v <- .fun(i, ...)
+                # assignment NULL would remove it from the list
+                if (!is.null(v)) ans[[i]] <- v
+            }
         }
     }
 
+    ans
+}
+
+
+.DynamicForkCall <- function(ncore, .num, .fun, .combinefun, .updatefun, ...)
+{
+    # in order to use the internal functions accessed by ':::'
+    # the functions are all defined in 'parallel/R/unix/mclapply.R'
+
+    # check
+    stopifnot(is.numeric(ncore), length(ncore)==1L)
+    stopifnot(is.numeric(.num), length(.num)==1L)
+    stopifnot(is.function(.fun))
+    stopifnot(is.character(.combinefun) | is.function(.combinefun))
+    stopifnot(is.null(.updatefun) | is.function(.updatefun))
+
+    # all processes created from now on will be terminated by cleanup
+    parallel:::mc.reset.stream()
+    parallel:::prepareCleanup()
+    on.exit(parallel:::cleanup(TRUE))
+
+    # initialize
+    if (identical(.combinefun, "unlist") | identical(.combinefun, "list"))
+        ans <- vector("list", .num)
+    else
+        ans <- NULL
+
+    jobs <- lapply(seq_len(min(.num, ncore)), function(i)
+        parallel::mcparallel(.fun(i, ...), name=NULL, mc.set.seed=TRUE, silent=FALSE))
+    jobsp <- parallel:::processID(jobs)
+    jobid <- seq_along(jobsp)
+    has.errors <- 0L
+
+    finish <- rep(FALSE, .num)
+    nexti <- length(jobid) + 1L
+    while (!all(finish))
+    {
+        s <- parallel:::selectChildren(jobs[!is.na(jobsp)], -1)
+        if (is.null(s)) break  # no children, should not happen
+        if (is.integer(s))
+        {
+            for (ch in s)
+            {
+                ji <- match(TRUE, jobsp==ch)
+                ci <- jobid[ji]
+                r <- parallel:::readChild(ch)
+                if (is.raw(r))
+                {
+                    child.res <- unserialize(r)
+                    if (inherits(child.res, "try-error"))
+                        has.errors <- has.errors + 1L
+                    if (is.function(.combinefun))
+                    {
+                        if (inherits(child.res, "try-error"))
+                            stop(child.res)
+                        if (is.null(ans))
+                            ans <- child.res
+                        else
+                            ans <- .combinefun(ans, child.res)
+                    } else if (.combinefun %in% c("unlist", "list"))
+                    {
+                        # assignment NULL would remove it from the list
+                        if (!is.null(child.res)) ans[[ci]] <- child.res
+                    }
+                    if (!is.null(.updatefun)) .updatefun(ci)
+                } else {
+                    # the job has finished
+                    finish[ci] <- TRUE
+                    jobsp[ji] <- jobid[ji] <- NA_integer_
+                    # still something to do
+                    if (nexti <= .num)
+                    {
+                        jobid[ji] <- nexti
+                        jobs[[ji]] <- parallel::mcparallel(.fun(nexti, ...),
+                            name=NULL, mc.set.seed=TRUE, silent=FALSE)
+                        jobsp[ji] <- parallel:::processID(jobs[[ji]])
+                        nexti <- nexti + 1L
+                    }
+                }
+            }
+        }
+    }
+
+    if (has.errors)
+    {
+        warning(sprintf("%d function calls resulted in an error", has.errors),
+            immediate.=TRUE, domain=NA)
+    }
     ans
 }
 
@@ -745,6 +851,27 @@
 .seqDebug <- function(gdsfile)
 {
     .Call("SEQ_Debug", gdsfile)
+    invisible()
+}
+
+
+
+#######################################################################
+# Convert to a VariantAnnotation object
+
+.seqProgress <- function(count)
+{
+    .Call(SEQ_Progress, count)
+}
+
+.seqProgForward <- function(progress, inc)
+{
+    if (!is.null(progress))
+    {
+        stopifnot(inherits(progress, "SeqClass_Progress"))
+        stopifnot(is.numeric(inc))
+        .Call(SEQ_ProgressAdd, progress, inc)
+    }
     invisible()
 }
 

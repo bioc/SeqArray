@@ -1,3 +1,26 @@
+CHANGES IN VERSION 1.24.2
+-------------------------
+
+BUG FIXES
+
+    o fix `seqSummary()` when no phase data
+
+UTILITIES
+
+    o improve unix forking processes for load balancing in `seqParallel()`
+
+
+CHANGES IN VERSION 1.24.1
+-------------------------
+
+NEW FEATURES
+
+    o add the compiler information in `seqSystem()`
+
+    o new arguments '.balancing', '.bl_size' and '.bl_progress' in `seqParallel()`
+      for load balancing
+
+
 CHANGES IN VERSION 1.24.0
 -------------------------
 
