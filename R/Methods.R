@@ -380,7 +380,7 @@ seqGetFilter <- function(gdsfile, .useraw=FALSE)
 #######################################################################
 # Get data from a working space with selected samples and variants
 #
-seqGetData <- function(gdsfile, var.name, .useraw=FALSE)
+seqGetData <- function(gdsfile, var.name, .useraw=FALSE, .envir=NULL)
 {
     # check
     if (is.character(gdsfile))
@@ -390,7 +390,7 @@ seqGetData <- function(gdsfile, var.name, .useraw=FALSE)
     } else {
         stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
     }
-    .Call(SEQ_GetData, gdsfile, var.name, .useraw)
+    .Call(SEQ_GetData, gdsfile, var.name, .useraw, .envir)
 }
 
 
@@ -476,7 +476,6 @@ seqBlockApply <- function(gdsfile, var.name, FUN, margin=c("by.variant"),
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
     stopifnot(is.character(var.name), length(var.name)>0L)
-
     FUN <- match.fun(FUN)
     margin <- match.arg(margin)
     var.index <- match.arg(var.index)

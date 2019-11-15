@@ -1,42 +1,34 @@
-\name{seqBlockApply}
-\alias{seqBlockApply}
-\title{Apply Functions Over Array Margins via Blocking}
+\name{seqUnitApply}
+\alias{seqUnitApply}
+\title{Sliding units of selected variants}
 \description{
-    Returns a vector or list of values obtained by applying a function to
-margins of genotypes and annotations via blocking.
+    Generating units of selected variants via sliding windows.
 }
 \usage{
-seqBlockApply(gdsfile, var.name, FUN, margin=c("by.variant"),
-    as.is=c("none", "list", "unlist"), var.index=c("none", "relative", "absolute"),
-    bsize=1024L, parallel=FALSE, .useraw=FALSE, .progress=FALSE, ...)
+seqUnitApply(gdsfile, units, var.name, FUN, as.is=c("none", "list", "unlist"),
+    parallel=FALSE, ..., .bl_size=256L, .progress=FALSE, .useraw=FALSE, .envir=NULL)
 }
 \arguments{
     \item{gdsfile}{a \code{\link{SeqVarGDSClass}} object}
+    \item{units}{a list of units of selected variants, with S3 class "SeqUnitListClass"}
     \item{var.name}{the variable name(s), see details}
     \item{FUN}{the function to be applied}
-    \item{margin}{giving the dimension which the function will be applied over}
     \item{as.is}{returned value: a list, a vector or none;
         \code{as.is} can be a \code{\link{connection}} object, or a GDS node
         \code{\link{gdsn.class}} object; if "unlist" is used, produces a vector
         which contains all the atomic components, via
         \code{unlist(..., recursive=FALSE)}}
-    \item{var.index}{if \code{"none"}, call \code{FUN(x, ...)} without variable
-        index; if \code{"relative"} or \code{"absolute"}, add an argument to
-        the user-defined function \code{FUN} like \code{FUN(index, x, ...)}
-        where \code{index} is an index of variant starting from 1 if
-        \code{margin = "by.variant"}: \code{"relative"} for indexing in the
-        selection defined by \code{\link{seqSetFilter}}, \code{"absolute"}
-        for indexing with respect to all data}
-    \item{bsize}{block size}
     \item{parallel}{\code{FALSE} (serial processing), \code{TRUE} (multicore
         processing), numeric value or other value; \code{parallel} is passed
         to the argument \code{cl} in \code{\link{seqParallel}}, see
         \code{\link{seqParallel}} for more details.}
+    \item{.bl_size}{chuck size, the increment for load balancing, 256 for units}
+    \item{.progress}{if \code{TRUE}, show progress information}
     \item{.useraw}{\code{TRUE}, force to use RAW instead of INTEGER for
         genotypes and dosages; \code{FALSE}, use INTEGER; \code{NA}, use RAW
         instead of INTEGER if possible; for genotypes, 0xFF is missing value
         if RAW is used}
-    \item{.progress}{if \code{TRUE}, show progress information}
+    \item{.envir}{NULL, an environment object, or a list/data.frame}
     \item{...}{optional arguments to \code{FUN}}
 }
 \details{
@@ -71,57 +63,42 @@ the combination of chromosome, position and alleles, e.g., "1:1272721_A_G"
 
 \code{"$variant_index"} returns the indices of selected variants starting from 1.
 \code{"$sample_index"} returns the indices of selected samples starting from 1.
-
-    The algorithm is highly optimized by blocking the computations to exploit
-the high-speed memory instead of disk.
 }
 \value{
     A vector, a list of values or none.
 }
 
 \author{Xiuwen Zheng}
-\seealso{
-    \code{\link{seqApply}}, \code{\link{seqSetFilter}},
-    \code{\link{seqGetData}}, \code{\link{seqParallel}},
-    \code{\link{seqGetParallel}}
-}
 
 \examples{
-# the GDS file
-(gds.fn <- seqExampleFileName("gds"))
+# open the GDS file
+gdsfile <- seqOpen(seqExampleFileName("gds"))
 
-# display
-(f <- seqOpen(gds.fn))
+# variant units via sliding windows
+units <- seqUnitSlidingWindows(gdsfile)
 
-# get 'sample.id
-(samp.id <- seqGetData(f, "sample.id"))
-# "NA06984" "NA06985" "NA06986" ...
+v1 <- seqUnitApply(gdsfile, units, "genotype", function(x) dim(x)[3L],
+    as.is="unlist", .progress=TRUE)
+v2 <- seqUnitApply(gdsfile, units, "genotype", function(x) dim(x)[3L],
+    as.is="unlist", parallel=2, .progress=TRUE)
 
-# get 'variant.id'
-head(variant.id <- seqGetData(f, "variant.id"))
+all(v1 == lengths(units$index))
+all(v1 == v2)
 
 
-# set sample and variant filters
-set.seed(100)
-seqSetFilter(f, sample.id=samp.id[c(2,4,6,8,10)],
-    variant.id=sample(variant.id, 10))
+# call with an external R variable
+ext <- list(x=1:1348/10)
+v3 <- seqUnitApply(gdsfile, units, "$:x", function(x) x,
+    as.is="list", .progress=TRUE, .envir=ext)
+head(units$index)
+head(v3)
 
-# read
-seqApply(f, "genotype", FUN=print, margin="by.variant")
-seqApply(f, "genotype", FUN=print, margin="by.variant", .useraw=TRUE)
-
-seqApply(f, "genotype", FUN=print, margin="by.sample")
-seqApply(f, "genotype", FUN=print, margin="by.sample", .useraw=TRUE)
-
-# read in block
-seqGetData(f, "$dosage")
-seqBlockApply(f, "$dosage", print, bsize=3)
-seqBlockApply(f, "$dosage", function(x) x, as.is="list", bsize=3)
-seqBlockApply(f, c(dos="$dosage", pos="position"), print, bsize=3)
+table(sapply(seq_along(units$index), function(i) all(units$index[[i]] == v3[[i]]*10)))
+# all TRUE
 
 
 # close the GDS file
-seqClose(f)
+seqClose(gdsfile)
 }
 
 \keyword{gds}

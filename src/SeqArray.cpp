@@ -552,18 +552,18 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceVariant2(SEXP gdsfile, SEXP var_sel,
 				// clear
 				Sel.ClearSelectVariant();
 				// set values
-				ssize_t num = 0, st=Count, ed=0;
+				ssize_t num=0, st=Count, ed=0;
 				int *pI = INTEGER(var_sel);
 				for (R_xlen_t i=0; i < N; i++)
 				{
 					int I = *pI ++;
-					if (I != NA_INTEGER)
+					if (I!=NA_INTEGER && !pArray[I-1])
 					{
-						num ++;
 						if (I > ed) ed = I;
 						ssize_t ii = I - 1;
 						if (ii < st) st = ii;
 						pArray[ii] = TRUE;
+						num ++;
 					}
 				}
 				// set the structure of selected variants
@@ -1361,7 +1361,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 
 	extern void Register_SNPRelate_Functions();
 
-	extern SEXP SEQ_GetData(SEXP, SEXP);
+	extern SEXP SEQ_GetData(SEXP, SEXP, SEXP, SEXP);
 	extern SEXP SEQ_ConvBEDFlag(SEXP, SEXP, SEXP);
 	extern SEXP SEQ_ConvBED2GDS(SEXP, SEXP, SEXP, SEXP, SEXP);
 
@@ -1372,6 +1372,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 	extern SEXP SEQ_MergeFormat(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 
 	extern SEXP SEQ_BApply_Variant(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+	extern SEXP SEQ_Unit_SlidingWindows(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 
 	extern SEXP SEQ_bgzip_create(SEXP);
 
@@ -1399,9 +1400,9 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 
 		CALL(SEQ_Summary, 2),               CALL(SEQ_System, 0),
 
-		CALL(SEQ_GetData, 3),
+		CALL(SEQ_GetData, 4),
 		CALL(SEQ_Apply_Sample, 7),          CALL(SEQ_Apply_Variant, 7),
-		CALL(SEQ_BApply_Variant, 7),
+		CALL(SEQ_BApply_Variant, 7),        CALL(SEQ_Unit_SlidingWindows, 7),
 
 		CALL(SEQ_ConvBEDFlag, 3),           CALL(SEQ_ConvBED2GDS, 5),
 		CALL(SEQ_SelectFlag, 2),            CALL(SEQ_ResetChrom, 1),

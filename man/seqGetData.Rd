@@ -5,15 +5,16 @@
     Gets data from a SeqArray GDS file.
 }
 \usage{
-seqGetData(gdsfile, var.name, .useraw=FALSE)
+seqGetData(gdsfile, var.name, .useraw=FALSE, .envir=NULL)
 }
 \arguments{
     \item{gdsfile}{a \code{\link{SeqVarGDSClass}} object}
-    \item{var.name}{the variable name, see details}
+    \item{var.name}{a variable name or a character vector, see details}
     \item{.useraw}{\code{TRUE}, force to use RAW instead of INTEGER for
         genotypes and dosages; \code{FALSE}, use INTEGER; \code{NA}, use RAW
         for small numbers instead of INTEGER if possible; 0xFF is missing value
         if RAW is used}
+    \item{.envir}{NULL, an environment object, or a list/data.frame}
 }
 \value{
     Return vectors, matrices or lists (with \code{length} and \code{data} components).
@@ -39,7 +40,6 @@ allele without distinguishing different alternative alleles.
 alleles.
 
 \code{"$ref"} returns a character vector of reference alleles.
-
 \code{"$alt"} returns a character vector of alternative alleles (delimited by
 comma).
 
@@ -47,6 +47,12 @@ comma).
 position, e.g., "1:1272721". \code{"$chrom_pos_allele"} returns characters with
 the combination of chromosome, position and alleles, e.g., "1:1272721_A_G"
 (i.e., chr:position_REF_ALT).
+
+\code{"$variant_index"} returns the indices of selected variants starting from 1.
+\code{"$sample_index"} returns the indices of selected samples starting from 1.
+
+\code{"$:VAR"} return the variable "VAR" from \code{.envir} according to the
+selected variants.
 }
 
 \author{Xiuwen Zheng}
@@ -86,9 +92,16 @@ head(seqGetData(f, "$num_allele"))
 
 
 # set sample and variant filters
-seqSetFilter(f, sample.id=samp.id[c(2,4,6,8,10)])
 set.seed(100)
+seqSetFilter(f, sample.id=samp.id[c(2,4,6,8,10)])
 seqSetFilter(f, variant.id=sample(variant.id, 10))
+
+# get a list
+seqGetData(f, c(chr="chromosome", pos="position", allele="allele"))
+
+# get the indices of selected variants/samples
+seqGetData(f, "$variant_index")
+seqGetData(f, "$sample_index")
 
 # get genotypic data
 seqGetData(f, "genotype")
@@ -111,6 +124,14 @@ seqGetData(f, "annotation/format/DP")
 #      variant
 # sample [,1] [,2] [,3] [,4] [,5] [,6] ...
 #  [1,]   25   25   22    3    4   17  ...
+
+
+# get values from R environment
+env <- new.env()
+env$x <- 1:1348 / 10
+env$x[seqGetData(f, "$variant_index")]
+seqGetData(f, "$:x", .envir=env)
+
 
 # close the GDS file
 seqClose(f)
