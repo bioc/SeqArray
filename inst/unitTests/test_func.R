@@ -80,8 +80,7 @@ test_allele_freq <- function()
 
 	for (p in 1L:num.cores)
 	{
-		d <- seqAlleleFreq(f, toupper(seqGetData(f, "annotation/info/AA")$data),
-			parallel=p)
+		d <- seqAlleleFreq(f, seqGetData(f, "annotation/info/AA"), parallel=p)
 		checkEquals(Valid$fcAlleleFreq$d4, d, paste0("seqAlleleFreq 4:", p))
 	}
 
@@ -222,7 +221,7 @@ test_random_info <- function()
 	for (nm in ls.gdsn(index.gdsn(f, "annotation/info")))
 	{
 		seqResetFilter(f, verbose=FALSE)
-		dat <- seqGetData(f, paste0("annotation/info/", nm))
+		dat <- seqGetData(f, paste0("annotation/info/", nm), .padNA=FALSE)
 		if (is.list(dat)) dat <- dat$data
 		dimnames(dat) <- NULL
 
@@ -235,7 +234,7 @@ test_random_info <- function()
 				seqSetFilter(f, variant.sel=k, verbose=FALSE)
 				d <- unlist(seqApply(f, paste0("annotation/info/", nm),
 					function(x) x, as.is="list"), recursive=FALSE)
-				rv[[k]] <- d
+				if (!is.null(d)) rv[[k]] <- d
 			}
 
 			m <- unlist(rv)

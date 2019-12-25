@@ -10,19 +10,29 @@
 # Add or modify values in a GDS file
 #
 seqAddValue <- function(gdsfile, varnm, val, desp="", replace=FALSE, compress="LZMA_RA",
-    packed=FALSE)
+    packed=TRUE, verbose=TRUE, verbose.attr=TRUE)
 {
-    stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+    stopifnot(is.character(gdsfile) | inherits(gdsfile, "SeqVarGDSClass"))
     stopifnot(is.character(varnm), length(varnm)==1L)
     stopifnot(is.character(desp), length(desp)==1L, !is.na(desp))
     stopifnot(is.logical(replace), length(replace)==1L)
-    stopifnot(is.character(compress))
+    stopifnot(is.character(compress), length(compress)==1L)
     stopifnot(is.logical(packed), length(packed)==1L)
+    stopifnot(is.logical(verbose), length(verbose)==1L)
+    stopifnot(is.logical(verbose.attr), length(verbose.attr)==1L)
+
+    if (is.character(gdsfile))
+    {
+        stopifnot(length(gdsfile) == 1L)
+        if (verbose)
+            cat("Open '", gdsfile, "' ...\n", sep="")
+        gdsfile <- seqOpen(gdsfile, readonly=FALSE)
+        on.exit(seqClose(gdsfile))
+    }
 
     # dm[1] -- ploidy, dm[2] -- # of total samples, dm[3] -- # of total variants
     dm <- .dim(gdsfile)
-    nsamp <- dm[2L]
-    nvar  <- dm[3L]
+    nsamp <- dm[2L]; nvar  <- dm[3L]
 
     if (varnm == "sample.id")
     {
@@ -33,6 +43,7 @@ seqAddValue <- function(gdsfile, varnm, val, desp="", replace=FALSE, compress="L
         n <- add.gdsn(gdsfile, "sample.id", val, compress=compress, closezip=TRUE,
             replace=TRUE)
         .DigestCode(n, TRUE, FALSE)
+        if (verbose) print(n, attribute=verbose.attr)
 
     } else if (varnm == "variant.id")
     {
@@ -43,6 +54,7 @@ seqAddValue <- function(gdsfile, varnm, val, desp="", replace=FALSE, compress="L
         n <- add.gdsn(gdsfile, "variant.id", val, compress=compress, closezip=TRUE,
             replace=TRUE)
         .DigestCode(n, TRUE, FALSE)
+        if (verbose) print(n, attribute=verbose.attr)
 
     } else if (varnm == "position")
     {
@@ -51,6 +63,7 @@ seqAddValue <- function(gdsfile, varnm, val, desp="", replace=FALSE, compress="L
         n <- add.gdsn(gdsfile, "position", as.integer(val), compress=compress,
             closezip=TRUE, replace=TRUE)
         .DigestCode(n, TRUE, FALSE)
+        if (verbose) print(n, attribute=verbose.attr)
 
     } else if (varnm == "chromosome")
     {
@@ -61,6 +74,7 @@ seqAddValue <- function(gdsfile, varnm, val, desp="", replace=FALSE, compress="L
         .DigestCode(n, TRUE, FALSE)
         .optim_chrom(gdsfile)  # RLE-coded chromosome
         .Call(SEQ_ResetChrom, gdsfile)
+        if (verbose) print(n, attribute=verbose.attr)
 
     } else if (varnm == "allele")
     {
@@ -69,6 +83,7 @@ seqAddValue <- function(gdsfile, varnm, val, desp="", replace=FALSE, compress="L
         n <- add.gdsn(gdsfile, "allele", val, compress=compress, closezip=TRUE,
             replace=TRUE)
         .DigestCode(n, TRUE, FALSE)
+        if (verbose) print(n, attribute=verbose.attr)
 
     } else if (varnm == "sample.annotation")
     {
@@ -89,6 +104,60 @@ seqAddValue <- function(gdsfile, varnm, val, desp="", replace=FALSE, compress="L
         varnm <- substring(varnm, 19L)
         n <- add.gdsn(n, varnm, val, compress=compress, closezip=TRUE, replace=replace)
         .DigestCode(n, TRUE, FALSE)
+        if (verbose) print(n, attribute=verbose.attr)
+
+    } else if (substr(varnm, 1L, 16L) == "annotation/info/")
+    {
+        if (nchar(varnm) <= 16L) stop("Invalid 'varnm'.")
+        n <- index.gdsn(gdsfile, varnm, silent=TRUE)
+        if (!is.null(n)) stopifnot(replace)
+        node <- index.gdsn(gdsfile, dirname(varnm))
+        nm <- basename(varnm)
+        if (is.data.frame(val))
+        {
+            stopifnot(nrow(val) == nvar)
+            n <- addfolder.gdsn(node, nm, replace=TRUE)
+            if (verbose) print(n, attribute=verbose.attr)
+            for (i in seq_len(ncol(val)))
+            {
+                seqAddValue(gdsfile, paste0(varnm, "/", names(val)[i]), val[[i]],
+                    replace=replace, compress=compress, packed=packed,
+                    verbose=verbose, verbose.attr=verbose.attr)
+            }
+        } else if (is.null(val))
+        {
+            n <- addfolder.gdsn(node, nm, replace=TRUE)
+            if (verbose) print(n, attribute=verbose.attr)
+        } else if ((is.vector(val) || is.factor(val) || is.matrix(val)) && !is.list(val))
+        {
+            isvec <- is.vector(val) || is.factor(val)
+            if (isvec)
+                stopifnot(length(val) == nvar)
+            else if (is.matrix(val))
+                stopifnot(ncol(val) == nvar)
+            if (packed && isvec && any(is.na(val)))
+            {
+                x <- !is.na(val)
+                n <- add.gdsn(node, nm, val[x], compress=compress, closezip=TRUE,
+                    replace=TRUE)
+                nidx <- add.gdsn(node, paste0("@", nm), x, storage="bit1",
+                    compress=compress, closezip=TRUE, replace=TRUE, visible=FALSE)
+                num <- "."
+            } else {
+                n <- add.gdsn(node, nm, val, compress=compress, closezip=TRUE,
+                    replace=TRUE)
+                nidx <- NULL
+                num <- as.character(ifelse(isvec, 1L, nrow(val)))
+            }
+            put.attr.gdsn(n, "Number", num)
+            put.attr.gdsn(n, "Type", .vcf_type(n))
+            put.attr.gdsn(n, "Description", desp)
+            .DigestCode(n, TRUE, FALSE)
+            if (!is.null(nidx)) .DigestCode(nidx, TRUE, FALSE)
+            if (verbose) print(n, attribute=verbose.attr)
+        } else {
+            stop("Invalid type of 'val': ", typeof(val))
+        }
 
     } else {
         stop("Invalid `varnm`.")

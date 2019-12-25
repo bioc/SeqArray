@@ -271,7 +271,7 @@ seqSetFilterPos <- function(object, chr, pos, intersect=FALSE, multi.pos=FALSE,
     stopifnot(inherits(object, "SeqVarGDSClass"))
     stopifnot(is.vector(chr))
     stopifnot(is.vector(pos))
-    stopifnot(length(chr) == length(pos))
+    stopifnot(length(chr)==1L || length(chr)==length(pos))
     stopifnot(is.logical(intersect), length(intersect)==1L)
     stopifnot(is.logical(multi.pos), length(multi.pos)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
@@ -380,7 +380,7 @@ seqGetFilter <- function(gdsfile, .useraw=FALSE)
 #######################################################################
 # Get data from a working space with selected samples and variants
 #
-seqGetData <- function(gdsfile, var.name, .useraw=FALSE, .envir=NULL)
+seqGetData <- function(gdsfile, var.name, .useraw=FALSE, .padNA=TRUE, .envir=NULL)
 {
     # check
     if (is.character(gdsfile))
@@ -390,7 +390,7 @@ seqGetData <- function(gdsfile, var.name, .useraw=FALSE, .envir=NULL)
     } else {
         stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
     }
-    .Call(SEQ_GetData, gdsfile, var.name, .useraw, .envir)
+    .Call(SEQ_GetData, gdsfile, var.name, .useraw, .padNA, .envir)
 }
 
 
@@ -471,7 +471,7 @@ seqApply <- function(gdsfile, var.name, FUN,
 seqBlockApply <- function(gdsfile, var.name, FUN, margin=c("by.variant"),
     as.is=c("none", "list", "unlist"),
     var.index=c("none", "relative", "absolute"), bsize=1024L, parallel=FALSE,
-    .useraw=FALSE, .progress=FALSE, ...)
+    .useraw=FALSE, .padNA=TRUE, .progress=FALSE, ...)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
@@ -481,7 +481,7 @@ seqBlockApply <- function(gdsfile, var.name, FUN, margin=c("by.variant"),
     var.index <- match.arg(var.index)
     stopifnot(is.numeric(bsize), length(bsize)==1L)
     njobs <- .NumParallel(parallel)
-    param <- list(bsize=bsize, useraw=.useraw, progress=.progress)
+    param <- list(bsize=bsize, useraw=.useraw, padNA=.padNA, progress=.progress)
 
     if (!inherits(as.is, "connection") & !inherits(as.is, "gdsn.class"))
     {

@@ -49,10 +49,11 @@ static const char *ERR_INDEX_VALUE =
 
 CIndex::CIndex()
 {
-	TotalLength = 0;
-	Position = 0;
+	TotalLength = Position = 0;
 	AccSum = 0;
 	AccIndex = AccOffset = 0;
+	has_index = false;
+	val_max = 0;
 }
 
 void CIndex::Init(PdContainer Obj, const char *varname)
@@ -102,6 +103,11 @@ void CIndex::Init(PdContainer Obj, const char *varname)
 	Position = 0;
 	AccSum = 0;
 	AccIndex = AccOffset = 0;
+	has_index = true;
+	val_max = 0;
+	for (size_t i=0; i < Values.size(); i++)
+		if (Values[i] > val_max) val_max = Values[i];
+
 	if (if_neg_val && varname)
 		warning(ERR_INDEX_VALUE, varname);
 }
@@ -116,6 +122,8 @@ void CIndex::InitOne(int num)
 	Position = 0;
 	AccSum = 0;
 	AccIndex = AccOffset = 0;
+	has_index = false;
+	val_max = 1;
 }
 
 void CIndex::GetInfo(size_t pos, C_Int64 &Sum, int &Value)
