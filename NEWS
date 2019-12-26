@@ -1,3 +1,16 @@
+CHANGES IN VERSION 1.26.2
+-------------------------
+
+NEW FEATURES
+
+    o multiple variable names are allowed in `seqGetData(, var.name=)`
+
+BUG FIXES
+
+    o fix `seqGetData(, "genotype", .useraw=NA)`
+      (https://github.com/zhengxwen/SeqArray/issues/58)
+
+
 CHANGES IN VERSION 1.26.1
 -------------------------
 

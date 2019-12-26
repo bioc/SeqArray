@@ -48,7 +48,7 @@ static SEXP VAR_LOGICAL(PdGDSObj Node, SEXP Array)
 
 
 // get data
-static SEXP VarGetData(CFileInfo &File, const char *name, bool use_raw)
+static SEXP VarGetData(CFileInfo &File, const char *name, int use_raw)
 {
 	static const char *ERR_DIM = "Invalid dimension of '%s'.";
 
@@ -557,17 +557,32 @@ static SEXP VarGetData(CFileInfo &File, const char *name, bool use_raw)
 /// Get data from a working space
 COREARRAY_DLL_EXPORT SEXP SEQ_GetData(SEXP gdsfile, SEXP var_name, SEXP UseRaw)
 {
-	if (!Rf_isString(var_name) || RLength(var_name)!=1)
-		error("'var.name' should be a string of length one.");
+	if (!Rf_isString(var_name))
+		error("'var.name' should be character.");
+	const int nlen = RLength(var_name);
+	if (nlen <= 0)
+		error("'length(var.name)' should be > 0.");
+	if (TYPEOF(UseRaw) != LGLSXP)
+		error("'.useraw' must be logical.");
 	int use_raw = Rf_asLogical(UseRaw);
-	if (use_raw == NA_LOGICAL)
-		error("'.useraw' must be TRUE or FALSE.");
 
 	COREARRAY_TRY
 		// File information
 		CFileInfo &File = GetFileInfo(gdsfile);
 		// Get data
-		rv_ans = VarGetData(File, CHAR(STRING_ELT(var_name, 0)), use_raw);
+		if (nlen == 1)
+		{
+			rv_ans = VarGetData(File, CHAR(STRING_ELT(var_name, 0)), use_raw);
+		} else {
+			rv_ans = PROTECT(NEW_LIST(nlen));
+			for (int i=0; i < nlen; i++)
+			{
+				SET_VECTOR_ELT(rv_ans, i,
+					VarGetData(File, CHAR(STRING_ELT(var_name, i)), use_raw));
+			}
+			setAttrib(rv_ans, R_NamesSymbol, getAttrib(var_name, R_NamesSymbol));
+			UNPROTECT(1);
+		}
 	COREARRAY_CATCH
 }
 
