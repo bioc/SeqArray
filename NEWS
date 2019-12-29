@@ -1,3 +1,20 @@
+CHANGES IN VERSION 1.27.5
+-------------------------
+
+NEW FEATURES
+
+    o new function `seqSetFilterAnnotID()`
+
+    o multicore function in `seqBED2GDS()`
+
+UTILITIES
+
+    o `seqBED2GDS()` allows a single file name without the extended file names
+      (.bed, .fam, .bim)
+
+    o allele flip in `seqBED2GDS()` to allow major allele to be reference
+
+
 CHANGES IN VERSION 1.27.3
 -------------------------
 

@@ -32,30 +32,12 @@ extern "C"
 // PLINK BED --> SeqArray GDS
 // ======================================================================
 
-/// to detect PLINK BED
-COREARRAY_DLL_EXPORT SEXP SEQ_ConvBEDFlag(SEXP File, SEXP ReadBinFun, SEXP Rho)
-{
-	// 'readBin(File, raw(), 3)'
-	SEXP R_Read_Call = PROTECT(
-		LCONS(ReadBinFun, LCONS(File,
-		LCONS(NEW_RAW(0), LCONS(ScalarInteger(3), R_NilValue)))));
-
-	// call ...
-	SEXP val = PROTECT(eval(R_Read_Call, Rho));
-	unsigned char *prefix = RAW(val);
-
-	if ((prefix[0] != 0x6C) || (prefix[1] != 0x1B))
-		error("Invalid prefix in the bed file.");
-
-	UNPROTECT(2);
-	return ScalarInteger((C_UInt8)prefix[2]);
-}
-
-
 /// to convert from PLINK BED to GDS
 COREARRAY_DLL_EXPORT SEXP SEQ_ConvBED2GDS(SEXP GenoNode, SEXP Num, SEXP File,
-	SEXP ReadBinFun, SEXP Rho)
+	SEXP ReadBinFun, SEXP Rho, SEXP Verbose)
 {
+	int verbose = Rf_asLogical(Verbose);
+
 	COREARRAY_TRY
 
 		PdAbstractArray Mat = GDS_R_SEXP2Obj(GenoNode, FALSE);
@@ -63,7 +45,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_ConvBED2GDS(SEXP GenoNode, SEXP Num, SEXP File,
 		int DLen[3];
 		GDS_Array_GetDim(Mat, DLen, 3);
 
-		int nGeno = DLen[1]*2;
+		int nGeno = DLen[1] * 2;
 		int nRe = DLen[1] % 4;
 		int nRe4 = DLen[1] / 4;
 		int nPack = (nRe > 0) ? (nRe4 + 1) : nRe4;
@@ -74,14 +56,17 @@ COREARRAY_DLL_EXPORT SEXP SEQ_ConvBED2GDS(SEXP GenoNode, SEXP Num, SEXP File,
 			LCONS(NEW_RAW(0), LCONS(ScalarInteger(nPack), R_NilValue)))));
 
 		vector<C_UInt8> dstgeno(nGeno);
-		static const C_UInt8 cvt1[4] = { 0, 3, 1, 1 };
-		static const C_UInt8 cvt2[4] = { 0, 3, 0, 1 };
+		static const C_UInt8 cvt1[4] = { 1, 3, 1, 0 };
+		static const C_UInt8 cvt2[4] = { 1, 3, 0, 0 };
+
+		// progress object
+		CProgressStdOut progress(n, 1, verbose==TRUE);
 
 		for (int i=0; i < n; i++)
 		{
 			// read genotypes
 			SEXP val = eval(R_Read_Call, Rho);
-			unsigned char *srcgeno = RAW(val);
+			unsigned char *srcgeno = (unsigned char *)RAW(val);
 
 			// unpacked
 			C_UInt8 *p = &dstgeno[0];
@@ -109,6 +94,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_ConvBED2GDS(SEXP GenoNode, SEXP Num, SEXP File,
 
 			// append
 			GDS_Array_AppendData(Mat, nGeno, &dstgeno[0], svUInt8);
+			progress.Forward();
 		}
 
 		UNPROTECT(1);
