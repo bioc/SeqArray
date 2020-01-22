@@ -616,7 +616,7 @@ seqMerge <- function(gds.fn, out.fn, storage.option="LZMA_RA",
                         if (!is.null(n3))
                         {
                             cnt <- objdesp.gdsn(index.gdsn(f, "variant.id"))$dim
-                            .repeat_gds(n3, 1L, cnt)
+                            .append_rep_gds(n3, as.raw(1L), cnt)
                         }
                     }
                 } else {
@@ -626,7 +626,7 @@ seqMerge <- function(gds.fn, out.fn, storage.option="LZMA_RA",
                             "@"), " error.")
                     }
                     cnt <- objdesp.gdsn(index.gdsn(f, "variant.id"))$dim
-                    .repeat_gds(n3, 0L, cnt)
+                    .append_rep_gds(n3, as.raw(0L), cnt)
                 }
             }
 
@@ -819,14 +819,14 @@ seqMerge <- function(gds.fn, out.fn, storage.option="LZMA_RA",
                     append.gdsn(n5, index.gdsn(n6, "@data"))
                 } else {
                     cnt <- objdesp.gdsn(index.gdsn(f, "variant.id"))$dim
-                    .repeat_gds(n5, 0L, cnt)
+                    .append_rep_gds(n5, as.raw(0L), cnt)
                 }
             }
 
         } else {
             ## merge different samples
             .Call(SEQ_MergeFormat, nVariant, varidx, flist,
-                paste("annotation/format/", varnm[i], "/data", sep=""),
+                paste("annotation/format/", varnm[i], sep=""),
                 gfile, list(verbose=verbose, na=rep(NA_integer_, nSamp)))
         }
 

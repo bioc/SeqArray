@@ -28,7 +28,7 @@ Release Version: v1.26.2
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [R Integration](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/R_Integration.html), [Overview Slides](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/OverviewSlides.html)
 * [News](http://www.bioconductor.org/packages/release/bioc/news/SeqArray/NEWS)
 
-Development Version: v1.27.5
+Development Version: v1.27.7
 
 [http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html)
 
@@ -79,7 +79,7 @@ R CMD INSTALL SeqArray_latest.tar.gz
 
 ## SeqArray Genotype File Downloads
 
-* [1000 Genomes Project](http://bochet.gcc.biostat.washington.edu/seqarray/1000genomes)
+* [1000 Genomes Project](https://gds-stat.s3.amazonaws.com/download/1000g/index.html)
 
 
 

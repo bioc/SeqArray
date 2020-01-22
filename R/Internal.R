@@ -159,20 +159,8 @@
 
 
 #######################################################################
-# append the repeated values
+# append values
 #
-.repeat_gds <- function(node, elm, count)
-{
-    val <- rep(elm, 65536L)
-    while (count > 0L)
-    {
-        size <- ifelse(count <= 65536L, count, 65536L)
-        append.gdsn(node, val[seq_len(size)], check=FALSE)
-        count <- count - size
-    }
-    invisible()
-}
-
 .append_gds <- function(target.node, gdslist, varname)
 {
     .MergeNodeAttr(target.node, gdslist, varname)
@@ -180,6 +168,11 @@
         append.gdsn(target.node, index.gdsn(gdslist[[i]], varname))
     readmode.gdsn(target.node)
     invisible()
+}
+
+.append_rep_gds <- function(node, elm, count)
+{
+    .Call(SEQ_AppendFill, node, elm, count)
 }
 
 
