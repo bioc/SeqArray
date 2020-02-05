@@ -13,9 +13,9 @@
 #######################################################################
 
 # get split from the total count
-.file_split <- function(count, pnum, start=1, avoid_odd=TRUE)
+.file_split <- function(count, pnum, start=1L, multiple=8L)
 {
-    .Call(SEQ_VCF_Split, start, count, pnum, avoid_odd)
+    .Call(SEQ_VCF_Split, start, count, pnum, multiple)
 }
 
 # need unique temporary file names
@@ -692,21 +692,17 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         if (start+count > num_var+1L)
             stop("Invalid 'count'.")
         if (verbose)
-        {
-            cat("    the total number of variants for import: ",
-                .pretty(count), "\n", sep="")
-        }
+            cat("    # of variants: ", .pretty(count), "\n", sep="")
 
         if (count >= pnum)
         {
             # need unique temporary file names
-            ptmpfn <- .get_temp_fn(pnum, basename(sub("^([^.]*).*", "\\1", out.fn)),
-                dirname(out.fn))
+            ptmpfn <- .get_temp_fn(pnum,
+                sub("^([^.]*).*", "\\1", basename(out.fn)), dirname(out.fn))
             psplit <- .file_split(count, pnum, start)
-
             if (verbose)
             {
-                cat(sprintf("    Writing to %d files:\n", pnum))
+                cat(sprintf("    >>> writing to %d files: <<<\n", pnum))
                 cat(sprintf("        %s [%s .. %s]\n", basename(ptmpfn),
                     .pretty(psplit[[1L]]),
                     .pretty(psplit[[1L]] + psplit[[2L]] - 1L)), sep="")
