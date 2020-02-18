@@ -28,7 +28,7 @@ Release Version: v1.26.2
 * Tutorials: [Data Management](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/SeqArrayTutorial.html), [R Integration](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/R_Integration.html), [Overview Slides](http://www.bioconductor.org/packages/release/bioc/vignettes/SeqArray/inst/doc/OverviewSlides.html)
 * [News](http://www.bioconductor.org/packages/release/bioc/news/SeqArray/NEWS)
 
-Development Version: v1.27.9
+Development Version: v1.27.11
 
 [http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html](http://www.bioconductor.org/packages/devel/bioc/html/SeqArray.html)
 
@@ -152,7 +152,7 @@ seqClose(f)
 | seqApply      | Apply a user-defined function over array margins [»](https://rdrr.io/bioc/SeqArray/man/seqApply.html) |
 | seqBlockApply | Apply a user-defined function over array margins via blocking [»](https://rdrr.io/bioc/SeqArray/man/seqBlockApply.html) |
 | seqParallel   | Apply functions in parallel [»](https://rdrr.io/bioc/SeqArray/man/seqParallel.html) |
-| [......](https://rdrr.io/bioc/SeqArray/man/) |   |
+| [...](https://rdrr.io/bioc/SeqArray/man/) |   |
 
 
 ## Benchmarks
@@ -163,14 +163,21 @@ seqClose(f)
 
 ![](vignettes/benchmark_rand_samp.svg)
 
-(BioC3.8: gdsfmt_v1.18.1, SeqArray_v1.22.6; BioC3.4: gdsfmt_v1.10.1, SeqArray_v1.14.1)
+*(BioC3.8: gdsfmt_v1.18.1, SeqArray_v1.22.6; BioC3.4: gdsfmt_v1.10.1, SeqArray_v1.14.1)*
 
-*Update ... (in progress)*
+### 2. Reading annotation data via blocking
+
+`seqBlockApply()` was unexpectedly slow using version ≤ v1.26.2.
+
+See: [https://github.com/zhengxwen/SeqArray/issues/59](https://github.com/zhengxwen/SeqArray/issues/59).
+
+
+*(update in progress ...)*
 
 
 ## File Format Conversion
 
-[gds2bgen](https://github.com/zhengxwen/gds2bgen): Format conversion between GDS and BGEN
+[gds2bgen](https://github.com/zhengxwen/gds2bgen): Format conversion from BGEN to GDS
 
 
 ## Also See
