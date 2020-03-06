@@ -29,7 +29,7 @@ import(methods)
 import(gdsfmt)
 importFrom(parallel, clusterApply, clusterApplyLB, clusterCall, detectCores,
     makeCluster, makeForkCluster, mclapply, stopCluster)
-importFrom(utils, read.table, flush.console, write.table)
+importFrom(utils, read.table, flush.console, write.table, str, tail)
 
 importFrom(S4Vectors, DataFrame, SimpleList)
 importClassesFrom(IRanges, IRanges)
@@ -41,6 +41,10 @@ importMethodsFrom(GenomicRanges, granges)
 importMethodsFrom(GenomeInfoDb, seqnames, seqlevels)
 importFrom(GenomeInfoDb, renameSeqlevels)
 importFrom(Biostrings, DNAStringSet, DNAStringSetList)
+
+
+# Registering S3 methods
+S3method(print, SeqVCFHeaderClass)
 
 
 # Export all names
