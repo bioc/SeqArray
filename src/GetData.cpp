@@ -27,6 +27,11 @@
 namespace SeqArray
 {
 
+// the mode of R data allowing sparse matrix, defined in >= gdsfmt_1.23.6
+#ifndef GDS_R_READ_ALLOW_SP_MATRIX
+#   define GDS_R_READ_ALLOW_SP_MATRIX    0
+#endif
+
 // check macro
 #define CHECK_SAMPLE_DIMENSION    \
 	if ((vm.NDim != 1) || (vm.Dim[0] != File.SampleNum()))    \
@@ -208,7 +213,8 @@ static SEXP get_phase(CFileInfo &File, TVarMap &Var, void *param)
 	if (Var.NDim == 3)
 		ss[2] = NeedArrayTRUEs(Var.Dim[2]);
 	return GDS_R_Array_Read(Var.Obj, NULL, NULL, ss,
-		GDS_R_READ_DEFAULT_MODE | (P->use_raw ? GDS_R_READ_ALLOW_RAW_TYPE : 0));
+		GDS_R_READ_DEFAULT_MODE | GDS_R_READ_ALLOW_SP_MATRIX |
+		(P->use_raw ? GDS_R_READ_ALLOW_RAW_TYPE : 0));
 }
 
 /// get dosage of reference allele from 'genotype/data'
@@ -473,7 +479,8 @@ static SEXP get_info(CFileInfo &File, TVarMap &Var, void *param)
 		int var_start, var_count;
 		vector<C_BOOL> var_sel;
 		// get var_start, var_count, var_sel
-		SEXP I32 = PROTECT(V.GetLen_Sel(Sel.pVariant, var_start, var_count, var_sel));
+		SEXP I32 = PROTECT(V.GetLen_Sel(Sel.pVariant, var_start, var_count,
+			var_sel));
 
 		C_BOOL *ss[2] = { &var_sel[0], NULL };
 		C_Int32 dimst[2]  = { var_start, 0 };
@@ -547,12 +554,20 @@ static SEXP get_info(CFileInfo &File, TVarMap &Var, void *param)
 			rv_ans = PROTECT(NEW_LIST(n));
 			int *psel = INTEGER(I32);
 			size_t d2 = (Var.NDim < 2) ? 1 : dimcnt[1], pt = 0;
+			SEXP ZeroLen = NULL;
 			for (int i=0; i < n; i++)
 			{
 				size_t nn = psel[i] * d2;
-				SEXP vv = Rf_allocVector(TYPEOF(val), nn);
+				SEXP vv;
+				if (nn <= 0)
+				{
+					if (!ZeroLen) ZeroLen = Rf_allocVector(TYPEOF(val), 0);
+					vv = ZeroLen;
+				} else {
+					vv = Rf_allocVector(TYPEOF(val), nn);
+				}
 				SET_ELEMENT(rv_ans, i, vv);
-				if (psel[i] > 0)
+				if (nn > 0)
 				{
 					switch (TYPEOF(val))
 					{
@@ -575,8 +590,8 @@ static SEXP get_info(CFileInfo &File, TVarMap &Var, void *param)
 					default:
 						throw ErrSeqArray("Not support data type for .tolist=TRUE.");
 					}
+					pt += nn;
 				}
-				pt += nn;
 			}
 		} else {
 			// create `list(length, data)`
@@ -584,6 +599,7 @@ static SEXP get_info(CFileInfo &File, TVarMap &Var, void *param)
 				SET_ELEMENT(rv_ans, 0, I32);
 				SET_ELEMENT(rv_ans, 1, val);
 			SET_NAMES(rv_ans, R_Data_Name);
+			SET_CLASS(rv_ans, R_Data_ListClass);
 		}
 		UNPROTECT(3);
 	}
@@ -596,30 +612,105 @@ static SEXP get_format(CFileInfo &File, TVarMap &Var, void *param)
 {
 	const TParam *P = (const TParam*)param;
 	const C_UInt32 UseMode =
-		GDS_R_READ_DEFAULT_MODE | (P->use_raw ? GDS_R_READ_ALLOW_RAW_TYPE : 0);
+		GDS_R_READ_DEFAULT_MODE | GDS_R_READ_ALLOW_SP_MATRIX |
+		(P->use_raw ? GDS_R_READ_ALLOW_RAW_TYPE : 0);
 
 	SEXP rv_ans = R_NilValue;
 	TSelection &Sel = File.Selection();
 	Sel.GetStructVariant();
 	CIndex &V = Var.Index;
-	int var_start, var_count;
-	vector<C_BOOL> var_sel;
-	SEXP I32 = PROTECT(V.GetLen_Sel(Sel.pVariant, var_start, var_count, var_sel));
+	if (!V.HasIndex() || (P->padNA==TRUE && V.IsFixedOne()))
+	{
+		// no index or fixed-one
+		Sel.GetStructVariant();
+		C_BOOL *ss[2] = { Sel.pVariant+Sel.varStart, Sel.pSample };
+		C_Int32 dimst[2]  = { C_Int32(Sel.varStart), 0 };
+		C_Int32 dimcnt[2] = { C_Int32(Sel.varEnd-Sel.varStart), Var.Dim[1] };
+		rv_ans = GDS_R_Array_Read(Var.Obj, dimst, dimcnt, ss, UseMode);
+		if (XLENGTH(rv_ans) > 0)
+			SET_DIMNAMES(rv_ans, R_Data_Dim2_Name);
 
-	C_BOOL *ss[2] = { &var_sel[0], Sel.pSample };
-	C_Int32 dimst[2]  = { var_start, 0 };
-	C_Int32 dimcnt[2];
-	GDS_Array_GetDim(Var.Obj, dimcnt, 2);
-	dimcnt[0] = var_count;
+	} else {
+		int var_start, var_count;
+		vector<C_BOOL> var_sel;
+		SEXP I32 = PROTECT(V.GetLen_Sel(Sel.pVariant, var_start, var_count,
+			var_sel));
 
-	PROTECT(rv_ans = NEW_LIST(2));
-		SET_ELEMENT(rv_ans, 0, I32);
-		SEXP DAT = GDS_R_Array_Read(Var.Obj, dimst, dimcnt, ss, UseMode);
-		SET_ELEMENT(rv_ans, 1, DAT);
-		SET_NAMES(rv_ans, R_Data_Name);
-		if (XLENGTH(DAT) > 0)
-			SET_DIMNAMES(DAT, R_Data_Dim2_Name);
-	UNPROTECT(2);
+		C_BOOL *ss[2] = { &var_sel[0], Sel.pSample };
+		C_Int32 dimst[2]  = { var_start, 0 };
+		C_Int32 dimcnt[2];
+		GDS_Array_GetDim(Var.Obj, dimcnt, 2);
+		dimcnt[0] = var_count;
+
+		if (!P->tolist)
+		{
+			PROTECT(rv_ans = NEW_LIST(2));
+				SET_ELEMENT(rv_ans, 0, I32);
+				SEXP DAT = GDS_R_Array_Read(Var.Obj, dimst, dimcnt, ss, UseMode);
+				SET_ELEMENT(rv_ans, 1, DAT);
+				SET_NAMES(rv_ans, R_Data_Name);
+				if (XLENGTH(DAT) > 0)
+					SET_DIMNAMES(DAT, R_Data_Dim2_Name);
+				SET_CLASS(rv_ans, R_Data_ListClass);
+			UNPROTECT(2);
+		} else {
+			// check
+			SEXP val = PROTECT(GDS_R_Array_Read(Var.Obj, dimst, dimcnt, ss,
+				UseMode));
+			switch (TYPEOF(val))
+			{
+				case INTSXP: case REALSXP: case LGLSXP:
+				case STRSXP: case RAWSXP:
+					break;
+				default:
+					throw ErrSeqArray("Not support data type for .tolist=TRUE.");
+			}
+			// convert to a list
+			const int n = Rf_length(I32);
+			rv_ans = PROTECT(NEW_LIST(n));
+			int *psel = INTEGER(I32);
+			size_t d2 = File.SampleNum(), pt = 0;
+			SEXP ZeroLen = NULL;
+			for (int i=0; i < n; i++)
+			{
+				SEXP vv;
+				size_t nn = psel[i] * d2;
+				if (nn <= 0)
+				{
+					if (!ZeroLen) ZeroLen = Rf_allocMatrix(TYPEOF(val), d2, 0);
+					vv = ZeroLen;
+				} else {
+					vv = Rf_allocMatrix(TYPEOF(val), d2, psel[i]);
+				}
+				SET_ELEMENT(rv_ans, i, vv);
+				if (nn > 0)
+				{
+					switch (TYPEOF(val))
+					{
+					case INTSXP:
+						memcpy(INTEGER(vv), &INTEGER(val)[pt], sizeof(int)*nn);
+						break;
+					case REALSXP:
+						memcpy(REAL(vv), &REAL(val)[pt], sizeof(double)*nn);
+						break;
+					case LGLSXP:
+						memcpy(LOGICAL(vv), &LOGICAL(val)[pt], sizeof(int)*nn);
+						break;
+					case STRSXP:
+						for (size_t i=0; i < nn; i++)
+							SET_STRING_ELT(vv, i, STRING_ELT(val, pt+i));
+						break;
+					case RAWSXP:
+						memcpy(RAW(vv), &RAW(val)[pt], nn);
+						break;
+					}
+					pt += nn;
+				}
+			}
+			UNPROTECT(3);
+		}
+	}
+	// output
 	return rv_ans;
 }
 

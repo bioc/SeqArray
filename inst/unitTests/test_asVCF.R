@@ -49,8 +49,10 @@ library(VariantAnnotation)
     } else if (is(iv[[n]], "CharacterList")) {
       iv[[n]] <- CharacterList(lapply(iv[[n]], function(x) {if (length(x) > 0) x else NA}))
     }
+    if (n == "AA")
+        iv[[n]][iv[[n]]=="."] <- NA
     checkEquals(iv[[n]], ig[[n]], paste(" ", n, "not identical"),
-                tolerance=2*(.Machine$double.eps^0.5), checkNames=FALSE)
+        tolerance=2*(.Machine$double.eps^0.5), checkNames=FALSE)
   }
 }
 
