@@ -27,6 +27,11 @@ process_count <- 1L
 )
 
 
+#######################################################################
+# Display function
+#
+.cat <- function(...) cat(..., "\n", sep="")
+
 
 #######################################################################
 # Get the numbers of selected samples and variants
@@ -369,11 +374,29 @@ process_count <- 1L
 #   .num -- the total number of segments
 #   .fun -- a user-defined function
 #   .combinefun -- a user-defined function for combining the returned values
-#   .stopcluster -- TRUE/FALSE, if TRUE stop cluster nodes after running the jobs
 #   .updatefun -- a user-defined function for updating progress (could be NULL)
+#   ... -- other parameters passed to .fun
 #
-.DynamicClusterCall <- function(cl, .num, .fun, .combinefun, .updatefun=NULL,
-    .stopcluster=FALSE, ...)
+
+.parse_send_data <- quote(
+    parallel:::sendData(con, list(type=type,data=value,tag=tag)))
+.postNode <- function(con, type, value=NULL, tag=NULL) eval(.parse_send_data)
+
+.sendCall <- function(con, fun, args, return=TRUE, tag=NULL)
+{
+    .postNode(con, "EXEC", list(fun=fun, args=args, return=return, tag=tag))
+    NULL
+}
+
+.parse_recv_one_data <- quote(parallel:::recvOneData(cl))
+.recvOneResult <- function(cl)
+{
+    v <- eval(.parse_recv_one_data)
+    list(value=v$value$value, node=v$node, tag=v$value$tag)
+}
+
+.DynamicClusterCall <- function(cl, .num, .fun, .combinefun,
+    .updatefun=NULL, ...)
 {
     # in order to use the internal functions accessed by ':::'
     # the functions are all defined in 'parallel/R/snow.R'
@@ -383,31 +406,10 @@ process_count <- 1L
     stopifnot(is.numeric(.num))
     stopifnot(is.function(.fun))
     stopifnot(is.character(.combinefun) | is.function(.combinefun))
-    stopifnot(is.logical(.stopcluster))
     stopifnot(is.null(.updatefun) | is.function(.updatefun))
-
-    .SendData <- parse(text=
-        "parallel:::sendData(con, list(type=type,data=value,tag=tag))")
-    .RecvOneData <- parse(text="parallel:::recvOneData(cl)")
-
-    postNode <- function(con, type, value = NULL, tag = NULL)
-    {
-        eval(.SendData)
-    }
-    sendCall <- function(con, fun, args, return = TRUE, tag = NULL)
-    {
-        postNode(con, "EXEC",
-            list(fun = fun, args = args, return = return, tag = tag))
-        NULL
-    }
-    recvOneResult <- function(cl)
-    {
-        v <- eval(.RecvOneData)
-        list(value = v$value$value, node = v$node, tag = v$value$tag)
-    }
-
-
-    #################################################################
+    argone <- FALSE
+    if (is.function(.combinefun))
+        argone <- length(formals(args(.combinefun))) == 1L
 
     if (!is.null(cl))
     {
@@ -425,41 +427,33 @@ process_count <- 1L
 
             argfun <- function(i) c(i, list(...))
             submit <- function(node, job)
-                sendCall(cl[[node]], .fun, argfun(job), tag = job)
+                .sendCall(cl[[node]], .fun, argfun(job), tag = job)
 
             for (i in 1:min(.num, p)) submit(i, i)
             for (i in seq_len(.num))
             {
-                d <- recvOneResult(cl)
+                d <- .recvOneResult(cl)
                 j <- i + min(.num, p)
-
-                stopflag <- FALSE
-                if (j <= .num)
-                {
-                    submit(d$node, j)
-                } else {
-                    if (.stopcluster)
-                    {
-                        parallel::stopCluster(cl[d$node])
-                        cl <- cl[-d$node]
-                        stopflag <- TRUE
-                    }
-                }
+                if (j <= .num) submit(d$node, j)
 
                 dv <- d$value
                 if (inherits(dv, "try-error"))
                 {
-                    if (.stopcluster)
-                        parallel::stopCluster(cl)
-                    stop("One of the nodes produced an error: ", as.character(dv))
+                    stop("One of the nodes produced an error: ",
+                        as.character(dv))
                 }
 
                 if (is.function(.combinefun))
                 {
-                    if (is.null(ans))
-                        ans <- dv
-                    else
-                        ans <- .combinefun(ans, dv)
+                    if (argone)
+                    {
+                        .combinefun(dv)
+                    } else {
+                        if (is.null(ans))
+                            ans <- dv
+                        else
+                            ans <- .combinefun(ans, dv)
+                    }
                 } else if (.combinefun %in% c("unlist", "list"))
                 {
                     # assignment NULL would remove it from the list
@@ -467,9 +461,6 @@ process_count <- 1L
                 }
 
                 if (!is.null(.updatefun)) .updatefun(i)
-
-                if (stopflag)
-                    message(sprintf("Stop \"job %d\".", d$node))
             }
         }
     } else {
@@ -480,10 +471,15 @@ process_count <- 1L
             for (i in seq_len(.num))
             {
                 dv <- .fun(i, ...)
-                if (is.null(ans))
-                    ans <- dv
-                else
-                    ans <- .combinefun(ans, dv)
+                if (argone)
+                {
+                    .combinefun(dv)
+                } else {
+                    if (is.null(ans))
+                        ans <- dv
+                    else
+                        ans <- .combinefun(ans, dv)
+                }
             }
         } else if (identical(.combinefun, "none"))
         {
@@ -501,9 +497,36 @@ process_count <- 1L
         }
     }
 
+    # output
     ans
 }
 
+
+
+#######################################################################
+# Parallel functions
+#   ncore -- the number of cores
+#   .num -- the total number of segments
+#   .fun -- a user-defined function
+#   .combinefun -- a user-defined function for combining the returned values
+#   .updatefun -- a user-defined function for updating progress (could be NULL)
+#   ... -- other parameters passed to .fun
+#
+
+.parse_prepare_cleanup <- quote(parallel:::prepareCleanup())
+.mc_prepCleanup <- function() eval(.parse_prepare_cleanup)
+
+.parse_cleanup <- quote(parallel:::cleanup(TRUE))
+.mc_cleanup <- function() eval(.parse_cleanup)
+
+.parse_process_id <- quote(parallel:::processID(jobs))
+.mc_processID <- function(jobs) eval(.parse_process_id)
+
+.parse_sel_child <- quote(parallel:::selectChildren(children, timeout))
+.mc_selectChildren <- function(children, timeout) eval(.parse_sel_child)
+
+.parse_read_child <- quote(parallel:::readChild(child))
+.mc_readChild <- function(child) eval(.parse_read_child)
 
 .DynamicForkCall <- function(ncore, .num, .fun, .combinefun, .updatefun, ...)
 {
@@ -516,11 +539,14 @@ process_count <- 1L
     stopifnot(is.function(.fun))
     stopifnot(is.character(.combinefun) | is.function(.combinefun))
     stopifnot(is.null(.updatefun) | is.function(.updatefun))
+    argone <- FALSE
+    if (is.function(.combinefun))
+        argone <- length(formals(args(.combinefun))) == 1L
 
     # all processes created from now on will be terminated by cleanup
     parallel::mc.reset.stream()
-    parallel:::prepareCleanup()
-    on.exit(parallel:::cleanup(TRUE))
+    .mc_prepCleanup()
+    on.exit(.mc_cleanup())
 
     # initialize
     if (identical(.combinefun, "unlist") | identical(.combinefun, "list"))
@@ -530,7 +556,7 @@ process_count <- 1L
 
     jobs <- lapply(seq_len(min(.num, ncore)), function(i)
         parallel::mcparallel(.fun(i, ...), name=NULL, mc.set.seed=TRUE, silent=FALSE))
-    jobsp <- parallel:::processID(jobs)
+    jobsp <- .mc_processID(jobs)
     jobid <- seq_along(jobsp)
     has.errors <- 0L
 
@@ -538,7 +564,7 @@ process_count <- 1L
     nexti <- length(jobid) + 1L
     while (!all(finish))
     {
-        s <- parallel:::selectChildren(jobs[!is.na(jobsp)], -1)
+        s <- .mc_selectChildren(jobs[!is.na(jobsp)], -1)
         if (is.null(s)) break  # no children, should not happen
         if (is.integer(s))
         {
@@ -546,7 +572,7 @@ process_count <- 1L
             {
                 ji <- match(TRUE, jobsp==ch)
                 ci <- jobid[ji]
-                r <- parallel:::readChild(ch)
+                r <- .mc_readChild(ch)
                 if (is.raw(r))
                 {
                     child.res <- unserialize(r)
@@ -559,10 +585,15 @@ process_count <- 1L
                     {
                         if (inherits(child.res, "try-error"))
                             stop(child.res)
-                        if (is.null(ans))
-                            ans <- child.res
-                        else
-                            ans <- .combinefun(ans, child.res)
+                        if (argone)
+                        {
+                            .combinefun(child.res)
+                        } else {
+                            if (is.null(ans))
+                                ans <- child.res
+                            else
+                                ans <- .combinefun(ans, child.res)
+                        }
                     } else if (.combinefun %in% c("unlist", "list"))
                     {
                         # assignment NULL would remove it from the list
@@ -579,7 +610,7 @@ process_count <- 1L
                         jobid[ji] <- nexti
                         jobs[[ji]] <- parallel::mcparallel(.fun(nexti, ...),
                             name=NULL, mc.set.seed=TRUE, silent=FALSE)
-                        jobsp[ji] <- parallel:::processID(jobs[[ji]])
+                        jobsp[ji] <- .mc_processID(jobs[[ji]])
                         nexti <- nexti + 1L
                     }
                 }
@@ -592,6 +623,8 @@ process_count <- 1L
         warning(sprintf("%d function calls resulted in an error", has.errors),
             immediate.=TRUE, domain=NA)
     }
+
+    # output
     ans
 }
 

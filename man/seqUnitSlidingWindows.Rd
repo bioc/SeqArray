@@ -2,7 +2,7 @@
 \alias{seqUnitSlidingWindows}
 \title{Sliding units of selected variants}
 \description{
-    Generating units of selected variants via sliding windows.
+    Generates units of selected variants via sliding windows.
 }
 \usage{
 seqUnitSlidingWindows(gdsfile, win.size=5000L, win.shift=2500L, win.start=0L,
@@ -24,15 +24,16 @@ indices).
 }
 
 \author{Xiuwen Zheng}
+\seealso{
+    \code{\link{seqUnitApply}}, \code{\link{seqUnitFilterCond}}
+}
 
 \examples{
 # open the GDS file
 gdsfile <- seqOpen(seqExampleFileName("gds"))
 
 v <- seqUnitSlidingWindows(gdsfile)
-names(v) # "desp"  "index"
-
-head(v$desp)
+v  # "desp" "index"
 
 # close the GDS file
 seqClose(gdsfile)
