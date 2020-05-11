@@ -25,12 +25,32 @@ seqUnitFilterCond <- function(gdsfile, units, maf=NaN, mac=1L, missing.rate=NaN,
     seqSetFilter(gdsfile, variant.sel=unlist(units$index), action="push+set",
         verbose=FALSE)
     on.exit({ seqSetFilter(gdsfile, action="pop", verbose=FALSE) })
+    if (verbose)
+    {
+        dm <- .seldim(gdsfile)
+        .cat("Dataset: ", .pretty(dm[2L]), " sample", .plural(dm[2L]),
+            " x ", .pretty(dm[3L]), " variant", .plural(dm[3L]))
+    }
 
     # calculate # of ref. allele and missing genotype
     if (verbose)
         cat("Calculating MAF, MAC and missing rates ...\n")
     # get MAF/MAC/missing rate
     v <- .Get_MAF_MAC_Missing(gdsfile, parallel, verbose)
+    # show maf, mac and missing rate
+    if (verbose)
+    {
+        if (length(maf) == 1L)
+            smaf <- paste0(">=", maf)
+        else
+            smaf <- paste0("[", maf[1L], ",", maf[2L], ")")
+        if (length(mac) == 1L)
+            smac <- paste0(">=", mac)
+        else
+            smac <- paste0("[", mac[1L], ",", mac[2L], ")")
+        .cat("[Filter] MAF: ", smaf, "; MAC: ", smac, "; missing rate: ",
+            ifelse(is.na(missing.rate), "no", paste0("<=", missing.rate)))
+    }
 
     # selection
     sel <- rep(TRUE, length(v$maf))
@@ -70,7 +90,7 @@ seqUnitFilterCond <- function(gdsfile, units, maf=NaN, mac=1L, missing.rate=NaN,
     # for each unit
     idx <- lapply(units$index, function(ii) {
         s <- sel[ii]
-        if (all(s)) return(ii)
+        if (all(s, na.rm=TRUE)) return(ii)
         ii[s]
     })
     units$index <- idx
@@ -86,7 +106,6 @@ seqUnitFilterCond <- function(gdsfile, units, maf=NaN, mac=1L, missing.rate=NaN,
         units$desp <- units$desp[x, ]
         units$index <- units$index[x]
     }
-    if (verbose) cat("New a unit list\n")
     units
 }
 
