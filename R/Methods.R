@@ -118,7 +118,7 @@ setMethod("seqSetFilter", signature(object="SeqVarGDSClass", variant.sel="ANY"),
                 return(invisible())
             },
             "push+set" = {
-                .Call(SEQ_FilterPushEmpty, object)
+                .Call(SEQ_FilterPushLast, object)
             },
             "push+intersect" = {
                 .Call(SEQ_FilterPushLast, object)
@@ -337,7 +337,7 @@ seqSetFilterCond <- function(gdsfile, maf=NaN, mac=1L, missing.rate=NaN,
         seqSetFilter(gdsfile, variant.sel=sel, action="intersect",
             verbose=verbose)
     } else if (verbose)
-        cat("No action in seqSetFilterCond().")
+        cat("No action in the filter of MAF, MAC and missing rate.\n")
 
     invisible()
 }
