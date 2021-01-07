@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.31.1-1.31.2
+CHANGES IN VERSION 1.31.1-1.31.4
 -------------------------
 
 NEW FEATURES
@@ -15,6 +15,12 @@ NEW FEATURES
 UTILITIES
 
     o allow no variant in `seqApply()` and `seqBlockApply()`
+
+BUG FIXES
+
+    o `seqGDS2VCF()` should output "." instead of NA in the FILTER column
+
+    o `seqGetData()` should support factor when '.padNA=TRUE' or '.tolist=TRUE'
 
 
 CHANGES IN VERSION 1.30.0
