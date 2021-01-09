@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.31.1-1.31.4
+CHANGES IN VERSION 1.31.1-1.31.5
 -------------------------
 
 NEW FEATURES
@@ -16,11 +16,16 @@ UTILITIES
 
     o allow no variant in `seqApply()` and `seqBlockApply()`
 
+    o the list object returned from `seqGetData()` always have names if there
+      are more than one input variable names
+
 BUG FIXES
 
     o `seqGDS2VCF()` should output "." instead of NA in the FILTER column
 
     o `seqGetData()` should support factor when '.padNA=TRUE' or '.tolist=TRUE'
+    
+    o fix `seqGDS2VCF()` with factor variables
 
 
 CHANGES IN VERSION 1.30.0
