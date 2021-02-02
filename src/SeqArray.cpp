@@ -2,7 +2,7 @@
 //
 // SeqArray.cpp: the C++ codes for the SeqArray package
 //
-// Copyright (C) 2013-2020    Xiuwen Zheng
+// Copyright (C) 2013-2021    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -233,11 +233,12 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceSample(SEXP gdsfile, SEXP samp_id,
 
 /// set a working space with selected samples (logical/raw vector, or index)
 COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceSample2(SEXP gdsfile, SEXP samp_sel,
-	SEXP intersect, SEXP verbose)
+	SEXP intersect, SEXP warn, SEXP verbose)
 {
 	static const char *WARN_SEL_INDEX =
-		"rearrange 'sample.sel' to be strictly increasing and remove the duplicates.";
-	int intersect_flag = Rf_asLogical(intersect);
+		"rearrange 'sample.sel' to be strictly increasing and remove duplicates.";
+	const int intersect_flag = Rf_asLogical(intersect);
+	const int warn_flag = Rf_asLogical(warn);
 
 	COREARRAY_TRY
 
@@ -315,7 +316,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceSample2(SEXP gdsfile, SEXP samp_sel,
 						last_I = I;
 					}
 				}
-				if (if_warn) warning(WARN_SEL_INDEX);
+				if (if_warn && warn_flag) warning(WARN_SEL_INDEX);
 				// set values
 				memset((void*)pArray, 0, Count);
 				pI = INTEGER(samp_sel);
@@ -342,7 +343,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceSample2(SEXP gdsfile, SEXP samp_sel,
 						last_I = I;
 					}
 				}
-				if (if_warn) warning(WARN_SEL_INDEX);
+				if (if_warn && warn_flag) warning(WARN_SEL_INDEX);
 				// get the current index
 				vector<int> Idx;
 				Idx.reserve(Cnt);
@@ -479,13 +480,14 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceVariant(SEXP gdsfile, SEXP var_id,
 
 /// set a working space with selected variants (logical/raw vector, or index)
 COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceVariant2(SEXP gdsfile, SEXP var_sel,
-	SEXP intersect, SEXP verbose)
+	SEXP intersect, SEXP warn, SEXP verbose)
 {
 	static const char *ERR_OUT_RANGE =
 		"Out of range 'variant.sel'.";
 	static const char *WARN_SEL_INDEX =
-		"rearrange 'variant.sel' to be strictly increasing and remove the duplicates.";
-	int intersect_flag = Rf_asLogical(intersect);
+		"rearrange 'variant.sel' to be strictly increasing and remove duplicates.";
+	const int intersect_flag = Rf_asLogical(intersect);
+	const int warn_flag = Rf_asLogical(warn);
 
 	COREARRAY_TRY
 
@@ -599,7 +601,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceVariant2(SEXP gdsfile, SEXP var_sel,
 							if_warn = true;
 					}
 				}
-				if (if_warn) warning(WARN_SEL_INDEX);
+				if (if_warn && warn_flag) warning(WARN_SEL_INDEX);
 				// set the structure of selected variants
 				Sel.varTrueNum = num;
 				Sel.varStart = st;
@@ -1533,6 +1535,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 	extern void Register_SNPRelate_Functions();
 
 	extern SEXP SEQ_GetData(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+	extern SEXP SEQ_ListVarData(SEXP, SEXP);
 	extern SEXP SEQ_ConvBED2GDS(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 
 	extern SEXP SEQ_MergeAllele(SEXP, SEXP, SEXP, SEXP);
@@ -1564,8 +1567,8 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 		CALL(SEQ_MergePhase, 5),            CALL(SEQ_MergeInfo, 6),
 		CALL(SEQ_MergeFormat, 6),
 
-		CALL(SEQ_SetSpaceSample, 4),        CALL(SEQ_SetSpaceSample2, 4),
-		CALL(SEQ_SetSpaceVariant, 4),       CALL(SEQ_SetSpaceVariant2, 4),
+		CALL(SEQ_SetSpaceSample, 4),        CALL(SEQ_SetSpaceSample2, 5),
+		CALL(SEQ_SetSpaceVariant, 4),       CALL(SEQ_SetSpaceVariant2, 5),
 		CALL(SEQ_SetSpaceChrom, 7),         CALL(SEQ_SetSpaceAnnotID, 3),
 
 		CALL(SEQ_SplitSelection, 5),        CALL(SEQ_SplitSelectionX, 9),
@@ -1573,7 +1576,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 
 		CALL(SEQ_Summary, 2),               CALL(SEQ_System, 0),
 
-		CALL(SEQ_GetData, 6),
+		CALL(SEQ_GetData, 6),               CALL(SEQ_ListVarData, 2),
 		CALL(SEQ_Apply_Sample, 7),          CALL(SEQ_Apply_Variant, 7),
 		CALL(SEQ_BApply_Variant, 7),        CALL(SEQ_Unit_SlidingWindows, 7),
 

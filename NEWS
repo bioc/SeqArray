@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.31.1-1.31.7
+CHANGES IN VERSION 1.31.1-1.31.8
 -------------------------
 
 NEW FEATURES
@@ -15,6 +15,11 @@ NEW FEATURES
     o new option 'packed.idx' in `seqAddValue()` for packing an indexing
       variable
 
+    o new option 'warn' in `seqSetFilter()` to enable or disable the warning
+
+    o new functions `seqNewVarData()` and `seqListVarData()` for
+      variable-length data
+
 UTILITIES
 
     o allow no variant in `seqApply()` and `seqBlockApply()`
@@ -29,6 +34,9 @@ BUG FIXES
     o `seqGetData()` should support factor when '.padNA=TRUE' or '.tolist=TRUE'
     
     o fix `seqGDS2VCF()` with factor variables
+
+    o `seqSummary(gds, "$filter")` should return a data frame with zero row if
+      'annotation/filter' is not a factor
 
 
 CHANGES IN VERSION 1.30.0
