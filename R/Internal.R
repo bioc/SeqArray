@@ -190,11 +190,20 @@ process_count <- 1L
 #######################################################################
 # append values
 #
-.append_gds <- function(target.node, gdslist, varname)
+.append_gds <- function(target.node, gdslist, varname, verbose)
 {
+    s <- "."
+    if (.crayon()) s <- crayon::blurred(s)
     .MergeNodeAttr(target.node, gdslist, varname)
     for (i in seq_along(gdslist))
+    {
         append.gdsn(target.node, index.gdsn(gdslist[[i]], varname))
+        if (verbose)
+        {
+            cat(s)
+            flush(stdout()); flush.console()
+        }
+    }
     readmode.gdsn(target.node)
     invisible()
 }
