@@ -1,3 +1,19 @@
+CHANGES IN VERSION 1.35.1
+-------------------------
+
+UTILITIES
+
+    o add `summary.SeqUnitListClass()`
+
+BUG FIXES
+
+    o `seqUnitApply()` works correctly with selected samples if 'parallel' is
+      a non-fork cluster
+
+    o `seqVCF2GDS()` and `seqVCF_Header()` work correctly if the VCF header has
+       white space
+
+
 CHANGES IN VERSION 1.32.0
 -------------------------
 

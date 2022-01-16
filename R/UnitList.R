@@ -257,12 +257,16 @@ seqUnitApply <- function(gdsfile, units, var.name, FUN,
                 parallel <- makeCluster(njobs)
             }
             # distribute the parameters to each node
-            clusterCall(parallel, function(fn, ut, vn, env) {
-                .packageEnv$gdsfile <- SeqArray::seqOpen(fn, allow.duplicate=TRUE)
+            clusterCall(parallel, function(fn, ut, vn, ss, env) {
+                f <- SeqArray::seqOpen(fn, allow.duplicate=TRUE)
+                .packageEnv$gdsfile <- f
+                SeqArray::seqSetFilter(f, sample.sel=ss, verbose=FALSE)
                 .packageEnv$units <- ut
                 .packageEnv$var.name <- vn
                 .packageEnv$envir <- env
-            }, fn=gdsfile$filename, ut=units$index, vn=var.name, env=.envir)
+                invisible()
+            }, fn=gdsfile$filename, ut=units$index, vn=var.name,
+                ss=.Call(SEQ_GetSpaceSample, gdsfile), env=.envir)
             # finalize
             on.exit({
                 clusterCall(parallel, function() {
@@ -323,3 +327,16 @@ seqUnitApply <- function(gdsfile, units, var.name, FUN,
 
 
 print.SeqUnitListClass <- function(x, ...) str(x, list.len=6L)
+
+summary.SeqUnitListClass <- function(object, ...)
+{
+    .cat("# of units: ", length(object$index))
+    .cat("# of variants in total: ", .pretty(length(unique(object$index))))
+    v <- lengths(object$index, use.names=FALSE)
+    .cat("Avg # of variants per unit: ", mean(v))
+    .cat("Median # of variants in a unit: ", median(v))
+    .cat("Min # of variants in a unit: ", min(v))
+    .cat("Max # of variants in a unit: ", max(v))
+    .cat("SD # of variants in a unit: ", sd(v))
+    invisible()
+}
