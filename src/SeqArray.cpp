@@ -1490,10 +1490,14 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Progress(SEXP Count, SEXP NProc)
 /// Get a progress bar object
 COREARRAY_DLL_EXPORT SEXP SEQ_ProgressAdd(SEXP ref, SEXP inc)
 {
+	if (Rf_isNull(ref)) return R_NilValue;
+	if (!Rf_inherits(ref, "SeqClass_Progress"))
+		error("the object should be created by .seqProgress()");
+	C_Int64 v = (C_Int64)Rf_asReal(inc);
 	COREARRAY_TRY
-		C_Int64 v = (C_Int64)Rf_asReal(inc);
 		CProgressStdOut *obj = (CProgressStdOut*)R_ExternalPtrAddr(ref);
 		if (obj) obj->Forward(v);
+		rv_ans = ScalarReal(obj->Counter());
 	COREARRAY_CATCH
 }
 

@@ -1,10 +1,22 @@
+CHANGES IN VERSION 1.35.3
+-------------------------
+
+NEW FEATURES
+
+    o new functions `seqGet2bGeno()` and `seqGetAF_AC_Missing()`
+
+UTILITIES
+
+    o remove the deprecated '.progress' in `seqMissing()`, `seqAlleleCount()`
+      and `seqAlleleFreq()`
+
+
 CHANGES IN VERSION 1.35.2
 -------------------------
 
 NEW FEATURES
 
-    o new functions `seqGetData(, "$dosage_sp")` and
-      `seqGetData(, "$dosage_sp2")` for a sparse matrix of dosages
+    o new function `seqGetData(, "$dosage_sp")` for a sparse matrix of dosages
 
 UTILITIES
 

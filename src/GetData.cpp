@@ -62,7 +62,6 @@ static const string VAR_PHASE("phase");
 static const string VAR_DOSAGE("$dosage");
 static const string VAR_DOSAGE_ALT("$dosage_alt");
 static const string VAR_DOSAGE_SP("$dosage_sp");
-static const string VAR_DOSAGE_SP2("$dosage_sp2");
 static const string VAR_NUM_ALLELE("$num_allele");
 static const string VAR_REF_ALLELE("$ref");
 static const string VAR_ALT_ALLELE("$alt");
@@ -165,6 +164,17 @@ static SEXP get_data_1d(CFileInfo &File, TVarMap &Var, void *param)
 		GDS_R_READ_DEFAULT_MODE | (P->use_raw ? GDS_R_READ_ALLOW_RAW_TYPE : 0));
 }
 
+/// get if I32 is needed for genotypes or not
+inline static bool get_geno_is_i32(const TParam *P, CApply_Variant_Geno &NodeVar)
+{
+	if  (P->use_raw == 0)
+		return true;
+	else if (P->use_raw == NA_INTEGER)
+		return NodeVar.NeedIntType();
+	else
+		return false;
+}
+
 /// get genotypes from 'genotype/data'
 static SEXP get_genotype(CFileInfo &File, TVarMap &Var, void *param)
 {
@@ -178,7 +188,7 @@ static SEXP get_genotype(CFileInfo &File, TVarMap &Var, void *param)
 		CApply_Variant_Geno NodeVar(File, P->use_raw);
 		// size to be allocated
 		ssize_t SIZE = (ssize_t)nSample * File.Ploidy();
-		if (P->use_raw)
+		if (!get_geno_is_i32(P, NodeVar))
 		{
 			rv_ans = PROTECT(NEW_RAW(nVariant * SIZE));
 			C_UInt8 *base = (C_UInt8 *)RAW(rv_ans);
@@ -230,7 +240,7 @@ static SEXP get_dosage(CFileInfo &File, TVarMap &Var, void *param)
 	{
 		// initialize GDS genotype Node
 		CApply_Variant_Dosage NodeVar(File, false, false);
-		if (P->use_raw)
+		if (!get_geno_is_i32(P, NodeVar))
 		{
 			rv_ans = PROTECT(allocMatrix(RAWSXP, nSample, nVariant));
 			C_UInt8 *base = (C_UInt8 *)RAW(rv_ans);
@@ -264,7 +274,7 @@ static SEXP get_dosage_alt(CFileInfo &File, TVarMap &Var, void *param)
 	{
 		// initialize GDS genotype Node
 		CApply_Variant_Dosage NodeVar(File, false, true);
-		if (P->use_raw)
+		if (!get_geno_is_i32(P, NodeVar))
 		{
 			rv_ans = PROTECT(allocMatrix(RAWSXP, nSample, nVariant));
 			C_UInt8 *base = (C_UInt8 *)RAW(rv_ans);
@@ -287,87 +297,17 @@ static SEXP get_dosage_alt(CFileInfo &File, TVarMap &Var, void *param)
 	return rv_ans;
 }
 
-/// get sparse form of dosage of alternative allele(s) from 'genotype/data'
-static SEXP get_dosage_sp(CFileInfo &File, TVarMap &Var, void *param)
+inline static void check_vector_size(size_t n)
 {
-	const TParam *P = (const TParam*)param;
-	SEXP rv_ans = R_NilValue;
-	const ssize_t nSample  = File.SampleSelNum();
-	const ssize_t nVariant = File.VariantSelNum();
-	if ((nSample > 0) && (nVariant > 0))
-	{
-		// initialize GDS genotype Node
-		CApply_Variant_Dosage NodeVar(File, false, true);
-		vector<double> x;
-		vector<int> i, p(nVariant+1);
-		int i_col=0;
-		if (P->use_raw)
-		{
-			SEXP buffer = PROTECT(NEW_RAW(nSample));
-			C_UInt8 *g_buf = (C_UInt8*)RAW(buffer);
-			do {
-				NodeVar.ReadDosageAlt(g_buf);
-				// get # of nonzero
-				size_t nnzero=0;
-				for (ssize_t j=0; j < nSample; j++)
-					if (g_buf[j] != 0) nnzero++;
-				x.reserve(x.size() + nnzero);
-				i.reserve(i.size() + nnzero);
-				// fill x & i
-				for (ssize_t j=0; j < nSample; j++)
-				{
-					C_UInt8 g = g_buf[j];
-					if (g != 0)
-					{
-						x.push_back(g!=NA_RAW ? g : NA_REAL);
-						i.push_back(j);
-					}
-				}
-				// update p
-				p[++i_col] = x.size();
-			} while (NodeVar.Next());
-			UNPROTECT(1);
-		} else {
-			SEXP buffer = PROTECT(NEW_INTEGER(nSample));
-			int *g_buf = INTEGER(buffer);
-			do {
-				NodeVar.ReadDosageAlt(g_buf);
-				// get # of nonzero
-				size_t nnzero=0;
-				for (ssize_t j=0; j < nSample; j++)
-					if (g_buf[j] != 0) nnzero++;
-				x.reserve(x.size() + nnzero);
-				i.reserve(i.size() + nnzero);
-				// fill x & i
-				for (ssize_t j=0; j < nSample; j++)
-				{
-					int g = g_buf[j];
-					if (g != 0)
-					{
-						x.push_back(g!=NA_INTEGER ? g : NA_REAL);
-						i.push_back(j);
-					}
-				}
-				// update p
-				p[++i_col] = x.size();
-			} while (NodeVar.Next());
-			UNPROTECT(1);
-		}
-	#ifdef COREARRAY_REGISTER_BIT64
-		if (x.size() > 2147483647)
-			throw ErrSeqArray("There are too many non-zeros in a sparse matrix.");
-	#endif
-		rv_ans = GDS_New_SpCMatrix(&x[0], &i[0], &p[0], x.size(),
-			nSample, nVariant);
-	}
-	// output
-	return rv_ans;
+#ifdef COREARRAY_REGISTER_BIT64
+	if (n > 2147483647)
+		throw ErrSeqArray("There are too many non-zeros in a sparse matrix.");
+#endif
 }
 
 /// get sparse form of dosage of alternative allele(s) from 'genotype/data'
-static SEXP get_dosage_sp2(CFileInfo &File, TVarMap &Var, void *param)
+static SEXP get_dosage_sp(CFileInfo &File, TVarMap &Var, void *param)
 {
-	const TParam *P = (const TParam*)param;
 	SEXP rv_ans = R_NilValue;
 	const ssize_t nSample  = File.SampleSelNum();
 	const ssize_t nVariant = File.VariantSelNum();
@@ -375,81 +315,90 @@ static SEXP get_dosage_sp2(CFileInfo &File, TVarMap &Var, void *param)
 	{
 		// initialize GDS genotype Node
 		CApply_Variant_Dosage NodeVar(File, false, true);
-		vector<double> x;
-		vector<int> i, p(nVariant+1);
-		int i_col=0;
-		if (P->use_raw)
+		const bool isI32 = NodeVar.NeedIntType();
+		// dgCMatrix@x, @i, @p
+		SEXP x_r, i_r;
+		SEXP p_r = PROTECT(NEW_INTEGER(nVariant+1));
+		int *p = INTEGER(p_r), i_col;
+		p[0] = i_col = 0;
+		// use RAW or integer
+		if (!isI32 && nSample<16777216)  // 2^24
 		{
 			SEXP buffer = PROTECT(NEW_RAW(nSample));
 			C_UInt8 *g_buf = (C_UInt8*)RAW(buffer);
-			do {
-				NodeVar.ReadDosageAlt(g_buf);
-				// get # of nonzero, get mean
-				size_t nnzero=0;
-				C_Int64 sum=0; int sum_n=0;
-				for (ssize_t j=0; j < nSample; j++)
-				{
-					C_UInt8 g = g_buf[j];
-					if (g != 0) nnzero++;
-					if (g != NA_RAW)
-						{ sum += g; sum_n++; }
-				}
-				double mean = (double)sum / sum_n;
-				x.reserve(x.size() + nnzero);
-				i.reserve(i.size() + nnzero);
-				// fill x & i
-				for (ssize_t j=0; j < nSample; j++)
-				{
-					C_UInt8 g = g_buf[j];
-					if (g != 0)
-					{
-						x.push_back(g!=NA_RAW ? g : mean);
-						i.push_back(j);
-					}
-				}
-				// update p
-				p[++i_col] = x.size();
-			} while (NodeVar.Next());
-			UNPROTECT(1);
-		} else {
-			SEXP buffer = PROTECT(NEW_INTEGER(nSample));
-			int *g_buf = INTEGER(buffer);
+			// dgCMatrix@i & @x (i << 8 | x)
+			vector<C_UInt32> i_x;
+			i_x.reserve(nSample);
 			do {
 				NodeVar.ReadDosageAlt(g_buf);
 				// get # of nonzero
-				size_t nnzero=0;
-				C_Int64 sum=0; int sum_n=0;
+				size_t nnzero = vec_i8_count((char *)g_buf, nSample, 0);
+				i_x.reserve(i_x.size() + nnzero);
+				// fill i & x
 				for (ssize_t j=0; j < nSample; j++)
 				{
-					int g = g_buf[j];
-					if (g != 0) nnzero++;
-					if (g != NA_INTEGER)
-						{ sum += g; sum_n++; }
+					C_UInt8 g = g_buf[j];
+					if (g != 0)
+						i_x.push_back((C_UInt32(j) << 8) | g);
 				}
-				double mean = (double)sum / sum_n;
-				x.reserve(x.size() + nnzero);
-				i.reserve(i.size() + nnzero);
-				// fill x & i
+				// update p
+				p[++i_col] = i_x.size();
+			} while (NodeVar.Next());
+			UNPROTECT(1);  // free buffer
+			const size_t n = i_x.size();
+			check_vector_size(n);
+			// dgCMatrix@x & @i
+			x_r = PROTECT(NEW_NUMERIC(n));
+			i_r = PROTECT(NEW_INTEGER(n));
+			double *x_r_p = REAL(x_r);
+			int *i_r_p = INTEGER(i_r);
+			for (size_t i=0; i < n; i++)
+			{
+				C_UInt32 v = i_x[i];
+				C_UInt8 g = v;
+				x_r_p[i] = (g != NA_RAW) ? g : NA_REAL;
+				i_r_p[i] = v >> 8;
+			}
+		} else {
+			SEXP buffer = PROTECT(NEW_INTEGER(nSample));
+			int *g_buf = INTEGER(buffer);
+			// dgCMatrix@i & @x (i << 32 | x)
+			vector<C_UInt64> i_x;
+			i_x.reserve(nSample);
+			do {
+				NodeVar.ReadDosageAlt(g_buf);
+				// get # of nonzero
+				size_t nnzero = vec_i32_count(g_buf, nSample, 0);
+				i_x.reserve(i_x.size() + nnzero);
+				// fill i & x
 				for (ssize_t j=0; j < nSample; j++)
 				{
 					int g = g_buf[j];
 					if (g != 0)
-					{
-						x.push_back(g!=NA_INTEGER ? g : mean);
-						i.push_back(j);
-					}
+						i_x.push_back((C_UInt64(j) << 32) | C_UInt32(g));
 				}
 				// update p
-				p[++i_col] = x.size();
+				p[++i_col] = i_x.size();
 			} while (NodeVar.Next());
-			UNPROTECT(1);
+			UNPROTECT(1);  // free buffer
+			const size_t n = i_x.size();
+			check_vector_size(n);
+			// dgCMatrix@x & @i
+			x_r = PROTECT(NEW_NUMERIC(n));
+			i_r = PROTECT(NEW_INTEGER(n));
+			double *x_r_p = REAL(x_r);
+			int *i_r_p = INTEGER(i_r);
+			for (size_t i=0; i < n; i++)
+			{
+				C_UInt64 v = i_x[i];
+				int g = v;
+				x_r_p[i] = (g != NA_INTEGER) ? g : NA_REAL;
+				i_r_p[i] = v >> 32;
+			}
 		}
-	#ifdef COREARRAY_REGISTER_BIT64
-		if (x.size() > 2147483647)
-			throw ErrSeqArray("There are too many non-zeros in a sparse matrix.");
-	#endif
-		rv_ans = GDS_New_SpCMatrix(&x[0], &i[0], &p[0], x.size(),
-			nSample, nVariant);
+		// new dgCMatrix
+		rv_ans = GDS_New_SpCMatrix2(x_r, i_r, p_r, nSample, nVariant);
+		UNPROTECT(3);
 	}
 	// output
 	return rv_ans;
@@ -1040,9 +989,6 @@ COREARRAY_DLL_LOCAL TVarMap &VarGetStruct(CFileInfo &File, const string &name)
 		} else if (name == VAR_DOSAGE_SP)
 		{
 			vm.Func = get_dosage_sp;
-		} else if (name == VAR_DOSAGE_SP2)
-		{
-			vm.Func = get_dosage_sp2;
 		} else if (name == VAR_NUM_ALLELE)
 		{
 			vm.Init(File, VAR_ALLELE, get_num_allele);

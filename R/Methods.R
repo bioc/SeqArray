@@ -679,15 +679,13 @@ seqNumAllele <- function(gdsfile)
 #######################################################################
 # Missing rate
 #
-seqMissing <- function(gdsfile, per.variant=TRUE, .progress=FALSE,
-    parallel=seqGetParallel(), verbose=FALSE)
+seqMissing <- function(gdsfile, per.variant=TRUE, parallel=seqGetParallel(),
+    verbose=FALSE)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
     stopifnot(is.logical(per.variant), length(per.variant)==1L)
-    stopifnot(is.logical(.progress), length(.progress)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
-    verbose <- verbose | .progress
 
     # check genotypes
     nm <- "genotype"
@@ -776,7 +774,7 @@ seqMissing <- function(gdsfile, per.variant=TRUE, .progress=FALSE,
 #######################################################################
 # Allele frequency
 #
-seqAlleleFreq <- function(gdsfile, ref.allele=0L, minor=FALSE, .progress=FALSE,
+seqAlleleFreq <- function(gdsfile, ref.allele=0L, minor=FALSE,
     parallel=seqGetParallel(), verbose=FALSE)
 {
     # check
@@ -784,9 +782,7 @@ seqAlleleFreq <- function(gdsfile, ref.allele=0L, minor=FALSE, .progress=FALSE,
     stopifnot(is.null(ref.allele) | is.numeric(ref.allele) |
         is.character(ref.allele))
     stopifnot(is.logical(minor), length(minor)==1L)
-    stopifnot(is.logical(.progress), length(.progress)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
-    verbose <- verbose | .progress
 
     # check genotypes
     gv <- .has_geno(gdsfile)
@@ -880,15 +876,13 @@ seqAlleleFreq <- function(gdsfile, ref.allele=0L, minor=FALSE, .progress=FALSE,
 #######################################################################
 # Allele counts
 #
-seqAlleleCount <- function(gdsfile, ref.allele=0L, minor=FALSE, .progress=FALSE,
+seqAlleleCount <- function(gdsfile, ref.allele=0L, minor=FALSE,
     parallel=seqGetParallel(), verbose=FALSE)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
     stopifnot(is.logical(minor), length(minor)==1L)
-    stopifnot(is.logical(.progress), length(.progress)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
-    verbose <- verbose | .progress
 
     # check genotypes
     gv <- .has_geno(gdsfile)
@@ -983,26 +977,101 @@ seqAlleleCount <- function(gdsfile, ref.allele=0L, minor=FALSE, .progress=FALSE,
 
 
 #######################################################################
-# get 2-bit packed genotypes in a raw matrix
+# Get AF/MAF, AC/MAC and missing rate for variants
 #
-.seqGet2bGeno <- function(gdsfile, verbose=TRUE)
+# [deprecated]
+.Get_MAF_MAC_Missing <- function(gdsfile, parallel, verbose)
+{
+    v <- seqGetAF_AC_Missing(gdsfile, parallel=parallel, verbose=verbose)
+    list(maf=v$af, mac=v$ac, miss=v$miss)
+}
+
+seqGetAF_AC_Missing <- function(gdsfile, minor=FALSE, parallel=seqGetParallel(),
+    verbose=FALSE)
 {
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
-    dm <- .seldim(gdsfile)
-    npack <- dm[2L] %/% 4L
-    if (dm[2L] %% 4L) npack <- npack + 1L
-	rv <- matrix(as.raw(0), nrow=npack, ncol=dm[3L])
+    stopifnot(is.logical(minor), length(minor)==1L)
+    stopifnot(is.logical(verbose), length(verbose)==1L)
+    .NumParallel(parallel)
 
-    n <- index.gdsn(gdsfile, "genotype/data", silent=TRUE)
-    if (!is.null(n))
+    # check genotypes
+    gv <- .has_geno(gdsfile)
+    if (gv)
+    {
+        nm <- "genotype"
+        ploidy <- .dim(gdsfile)[1L]
+    } else {
+        nm <- .has_dosage(gdsfile)
+        ploidy <- getOption("seqarray.ploidy", 2L)
+    }
+    if (is.na(ploidy)) ploidy <- 2L
+
+    # calculate
+    m3s <- seqParallel(parallel, gdsfile, split="by.variant", .combine="list",
+        FUN = function(f, pg, nm, pl, cn)
+        {
+            m3 <- matrix(0, nrow=3L, ncol=.seldim(f)[3L])
+            .cfunction2("FC_AF_AC_MISS_Init")(m3, pl)
+            seqApply(f, nm, as.is="none", FUN=.cfunction(cn),
+                .useraw=NA, .progress=pg & (process_index==1L))
+            m3
+        }, pg=verbose, nm=nm, pl=ploidy,
+            cn=ifelse(gv, "FC_AF_AC_MISS_Geno", "FC_AF_AC_MISS_DS"))
+
+    # merge
+    if (is.list(m3s)) m3s <- do.call(cbind, m3s)
+    # output
+    list(af=m3s[1L,], ac=m3s[2L,], miss=m3s[3L,])
+}
+
+
+
+#######################################################################
+# get 2-bit packed genotypes in a raw matrix
+#
+
+# deprecated
+.seqGet2bGeno <- function(gdsfile, verbose=TRUE)
+{
+    seqGet2bGeno(gdsfile, verbose=verbose)
+}
+
+seqGet2bGeno <- function(gdsfile, samp_by_var=TRUE, verbose=FALSE)
+{
+    # check
+    stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+    stopifnot(is.logical(samp_by_var), length(samp_by_var)==1L)
+    stopifnot(is.logical(verbose), length(verbose)==1L)
+
+    # get gds node
+    nd <- index.gdsn(gdsfile, "genotype/data", silent=TRUE)
+    if (!is.null(nd))
         varnm <- "$dosage_alt"
     else if (!is.null(index.gdsn(gdsfile, "annotation/format/DS", silent=TRUE)))
         varnm <- "annotation/format/DS"
     else
         stop("No 'genotype' or 'annotation/format/DS' is available.")
 
-    seqApply(gdsfile, varnm, FUN=.cfunction3("FC_SetPackedGeno"),
-        var.index="relative", .useraw=NA, z=list(rv, dm[2L]),
+    # get num of samples and variants
+    dm <- .seldim(gdsfile)
+    nsamp <- dm[2L]
+    nvar  <- dm[3L]
+    if (isTRUE(samp_by_var))
+    {
+        geno <- matrix(as.raw(0xFF), nrow=ceiling(nsamp/4), ncol=nvar)
+        cfunc <- .cfunction("FC_SetPackedGenoSxV")
+    } else {
+        geno <- matrix(as.raw(0xFF), nrow=ceiling(nvar/4), ncol=nsamp)
+        cfunc <- .cfunction("FC_SetPackedGenoVxS")
+    }
+    if (length(geno) <= 0) return(geno)
+
+    # initialize
+    .cfunction("FC_InitPackedGeno")(geno)
+    # fill
+    seqApply(gdsfile, varnm, FUN=cfunc, as.is="none", .useraw=NA,
         .progress=verbose)
-    rv
+
+    # output
+    geno
 }

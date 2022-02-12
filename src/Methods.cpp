@@ -2,7 +2,7 @@
 //
 // Methods.cpp: the C/C++ codes for the SeqArray package
 //
-// Copyright (C) 2015-2021    Xiuwen Zheng
+// Copyright (C) 2015-2022    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -26,7 +26,7 @@
 using namespace SeqArray;
 
 
-// used in FC_SetPackedGeno()
+// used in FC_SetPackedGenoSxV() & FC_SetPackedGenoVxS()
 
 static inline unsigned char g2b(Rbyte g)
 {
@@ -44,7 +44,7 @@ static inline unsigned char g2b(double g)
 }
 
 template<typename TYPE>
-	static void packed_geno(Rbyte *p, TYPE *s, int n)
+	static void packed_geno_SxV(Rbyte *p, TYPE *s, size_t n)
 {
 	unsigned char b0, b1, b2, b3;
 	for (; n >= 4; n-=4, s+=4)
@@ -68,6 +68,26 @@ template<typename TYPE>
 	}
 }
 
+
+template<typename TYPE>
+	static void packed_geno_VxS(Rbyte *p, TYPE *s, size_t n, size_t m,
+		unsigned char bit_shift)
+{
+	// bit_shift: 0, 1, 2, 3
+	static int mask[4] = { ~0x3, ~(0x3<<2), ~(0x3<<4), ~(0x3<<6) };
+	const unsigned char bit_mask = mask[bit_shift];
+	bit_shift *= 2;
+	for (size_t i=0; i < n; i++)
+	{
+		unsigned char b = g2b(s[i]);
+		unsigned char g = *p;
+		*p = (g & bit_mask) | (b << bit_shift);
+		p += m;
+	}
+}
+
+
+// ======================================================================
 
 extern "C"
 {
@@ -844,21 +864,25 @@ COREARRAY_DLL_EXPORT SEXP FC_AlleleCount(SEXP List)
 
 // ======================================================================
 
-// val[0] -- maf, val[1] -- mac, val[2] -- missing
-static double *mafmac_ptr = NULL;
+// val[0] -- AF/MAF, val[1] -- AC/MAC, val[2] -- missing
+static double *af_ac_miss_ptr = NULL;
 // ploidy
-static int mafmac_ploidy = 0;
+static int af_ac_miss_ploidy = 0;
+// whether return minor AF/AC
+static bool af_ac_miss_minor = false;
 
 /// Initialize maf/mac/missing internal variable
-COREARRAY_DLL_EXPORT SEXP FC_MAF_MAC_Init(SEXP M_3n, SEXP ploidy)
+COREARRAY_DLL_EXPORT SEXP FC_AF_AC_MISS_Init(SEXP M_3n, SEXP ploidy, SEXP minor)
 {
-	mafmac_ptr = REAL(M_3n);  // M_3n is a matrix with three rows
-	mafmac_ploidy = Rf_asInteger(ploidy);
+	af_ac_miss_ptr = REAL(M_3n);  // M_3n is a matrix with three rows
+	af_ac_miss_ploidy = Rf_asInteger(ploidy);
+	if (af_ac_miss_ploidy < 0) af_ac_miss_ploidy = 2;
+	af_ac_miss_minor = (Rf_asLogical(minor) == TRUE);
 	return R_NilValue;
 }
 
 /// Get MAF/MAC/missing rate from integer genotypes
-COREARRAY_DLL_EXPORT SEXP FC_MAF_MAC_Geno(SEXP Geno)
+COREARRAY_DLL_EXPORT SEXP FC_AF_AC_MISS_Geno(SEXP Geno)
 {
 	const size_t N = XLENGTH(Geno);
 	size_t n0, nmiss;
@@ -867,27 +891,28 @@ COREARRAY_DLL_EXPORT SEXP FC_MAF_MAC_Geno(SEXP Geno)
 	else
 		vec_i32_count2(INTEGER(Geno), N, 0, NA_INTEGER, &n0, &nmiss);
 	size_t n = N - nmiss;
-	// MAF
+	// AF/MAF
 	double af = R_NaN;
 	if (n > 0)
 	{
 		af = (double)n0 / n;
-		if (af > 0.5) af = 1 - af;
+		if (af_ac_miss_minor && (af > 0.5))
+			af = 1 - af;
 	}
-	mafmac_ptr[0] = af;
-	// MAC
+	af_ac_miss_ptr[0] = af;
+	// AC/MAC
 	double ac = n0, ac2 = n - n0;
-	if (ac > ac2) ac = ac2;
-	mafmac_ptr[1] = ac;
-	// Missing rate
-	mafmac_ptr[2] = (double)nmiss / N;
-	mafmac_ptr += 3;
-	// output
+	if (af_ac_miss_minor && (ac > ac2)) ac = ac2;
+	af_ac_miss_ptr[1] = ac;
+	// missing rate
+	af_ac_miss_ptr[2] = (double)nmiss / N;
+	af_ac_miss_ptr += 3;
+	// output nothing
 	return R_NilValue;
 }
 
 /// Get MAF/MAC/missing rate from dosages
-COREARRAY_DLL_EXPORT SEXP FC_MAF_MAC_DS(SEXP DS)
+COREARRAY_DLL_EXPORT SEXP FC_AF_AC_MISS_DS(SEXP DS)
 {
 	int n, m, num=0;
 	get_ds_n_m(DS, n, m);
@@ -908,21 +933,23 @@ COREARRAY_DLL_EXPORT SEXP FC_MAF_MAC_DS(SEXP DS)
 	double af=R_NaN, ac=R_NaN;
 	if (num > 0)
 	{
-		af = sum * m / (num * mafmac_ploidy);
-		if (af > 0.5) af = 1 - af;
-		double totac = double(num * mafmac_ploidy) / m;
+		af = sum * m / (num * af_ac_miss_ploidy);
+		if (af_ac_miss_minor && (af > 0.5))
+			af = 1 - af;
+		double totac = double(num * af_ac_miss_ploidy) / m;
 		ac = totac - sum;
-		if (ac > 0.5*totac) ac = totac - ac;
+		if (af_ac_miss_minor && (ac > 0.5*totac))
+			ac = totac - ac;
 	}
 
-	// MAF
-	mafmac_ptr[0] = af;
-	// MAC
-	mafmac_ptr[1] = ac;
-	// Missing rate
-	mafmac_ptr[2] = (double)(n - num) / n;
-	mafmac_ptr += 3;
-	// output
+	// AF/MAF
+	af_ac_miss_ptr[0] = af;
+	// AC/MAC
+	af_ac_miss_ptr[1] = ac;
+	// missing rate
+	af_ac_miss_ptr[2] = (double)(n - num) / n;
+	af_ac_miss_ptr += 3;
+	// output nothing
 	return R_NilValue;
 }
 
@@ -1053,33 +1080,74 @@ COREARRAY_DLL_EXPORT SEXP FC_DigestScan(SEXP Data)
 
 // ======================================================================
 
-/// store dosage in a 2-bit packed matrix
-COREARRAY_DLL_EXPORT SEXP FC_SetPackedGeno(SEXP index, SEXP dosage, SEXP param)
+static Rbyte *geno_raw_ptr = NULL;
+static size_t geno_nrow = 0;
+static size_t geno_ncol = 0;
+static size_t geno_index = 0;
+
+static const char *ERR_PACKED_GENO_N =
+	"Internal error: store genotype in packed raw format!";
+static const char *ERR_PACKED_GENO_TYPE =
+	"Internal error: invalid data type of dosage!";
+
+/// initialize the packed raw genotype matrix
+COREARRAY_DLL_EXPORT SEXP FC_InitPackedGeno(SEXP geno)
 {
-	SEXP rawmat = VECTOR_ELT(param, 0);
-	int NumPacked = INTEGER(GET_DIM(rawmat))[0];
-	SEXP samp = VECTOR_ELT(param, 1);
-	int nSamp = Rf_asInteger(samp);
-	int n = Rf_length(dosage);
-	if (n < nSamp)
-		error("Internal error: store genotype in packed raw format!");
-	if (n > nSamp) n = nSamp;
+	geno_raw_ptr = RAW(geno);
+	geno_nrow = INTEGER(GET_DIM(geno))[0];
+	geno_ncol = INTEGER(GET_DIM(geno))[1];
+	geno_index = 0;
+	return R_NilValue;
+}
 
-	Rbyte *p = RAW(rawmat) + NumPacked * (Rf_asInteger(index) - 1);
+/// store dosage in a 2-bit packed matrix (sample by variant)
+COREARRAY_DLL_EXPORT SEXP FC_SetPackedGenoSxV(SEXP dosage)
+{
+	size_t n = Rf_xlength(dosage);
+	if (n > geno_nrow*4) Rf_error(ERR_PACKED_GENO_N);
 
+	Rbyte *p = geno_raw_ptr + geno_nrow * geno_index;
+	geno_index ++;
 	switch (TYPEOF(dosage))
 	{
 	case RAWSXP:
-		packed_geno<Rbyte>(p, RAW(dosage), n);
+		packed_geno_SxV<Rbyte>(p, RAW(dosage), n);
 		break;
 	case INTSXP:
-		packed_geno<int>(p, INTEGER(dosage), n);
+		packed_geno_SxV<int>(p, INTEGER(dosage), n);
 		break;
 	case REALSXP:
-		packed_geno<double>(p, REAL(dosage), n);
+		packed_geno_SxV<double>(p, REAL(dosage), n);
 		break;
 	default:
-		error("Internal error: invalid data type of dosage!");
+		Rf_error(ERR_PACKED_GENO_TYPE);
+	}
+
+	return R_NilValue;
+}
+
+/// store dosage in a 2-bit packed matrix (variant by sample)
+COREARRAY_DLL_EXPORT SEXP FC_SetPackedGenoVxS(SEXP dosage)
+{
+	size_t n = Rf_xlength(dosage);
+	if (n !=  geno_ncol) Rf_error(ERR_PACKED_GENO_N);
+
+	Rbyte *p = geno_raw_ptr + (geno_index >> 2);
+	geno_index ++;
+	unsigned char bit_shift = geno_index & 0x03;
+	switch (TYPEOF(dosage))
+	{
+	case RAWSXP:
+		packed_geno_VxS<Rbyte>(p, RAW(dosage), n, geno_nrow, bit_shift);
+		break;
+	case INTSXP:
+		packed_geno_VxS<int>(p, INTEGER(dosage), n, geno_nrow, bit_shift);
+		break;
+	case REALSXP:
+		packed_geno_VxS<double>(p, REAL(dosage), n, geno_nrow, bit_shift);
+		break;
+	default:
+		Rf_error(ERR_PACKED_GENO_TYPE);
 	}
 
 	return R_NilValue;
