@@ -1,3 +1,18 @@
+CHANGES IN VERSION 1.36.1
+-------------------------
+
+UTILITIES
+
+    o new option 'ext_nbyte' in seqGet2bGeno()
+
+    o `seqAlleleCount()` and `seqGetAF_AC_Missing()` return NA instead of zero
+      when all genotypes are missing at a site
+
+BUG FIXES
+
+    o `seqExport()` failed when there is no variant
+
+
 CHANGES IN VERSION 1.36.0
 -------------------------
 
@@ -42,7 +57,7 @@ BUG FIXES
 
     o `seqGDS2BED()` with selected samples for sex and phenotype information
 
-    o buf fix in `seqGDS2VCF()` if there is no integer genotype
+    o bug fix in `seqGDS2VCF()` if there is no integer genotype
 
 
 CHANGES IN VERSION 1.32.0
