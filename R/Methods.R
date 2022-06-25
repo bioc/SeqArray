@@ -161,11 +161,10 @@ setMethod("seqSetFilter", signature(object="SeqVarGDSClass", variant.sel="ANY"),
             {
                 if (is.numeric(sample.sel))
                 {
-                    ii_samp <- order(sample.sel)
-                    if (anyNA(sample.sel))
-                        ii_samp[is.na(sample.sel)] <- NA_integer_
+                    ii_samp <- match(sample.sel,
+                        seqGetData(object, "$sample_index"))
                 } else {
-                    ii_samp <- seq_len(SeqArray:::.seldim(object)[2L])
+                    ii_samp <- seq_len(.seldim(object)[2L])
                 }
             }
         }
@@ -190,11 +189,10 @@ setMethod("seqSetFilter", signature(object="SeqVarGDSClass", variant.sel="ANY"),
             {
                 if (is.numeric(variant.sel))
                 {
-                    ii_var <- order(variant.sel)
-                    if (anyNA(variant.sel))
-                        ii_var[is.na(variant.sel)] <- NA_integer_
+                    ii_var <- match(variant.sel,
+                        seqGetData(object, "$variant_index"))
                 } else {
-                    ii_var <- seq_len(SeqArray:::.seldim(object)[3L])
+                    ii_var <- seq_len(.seldim(object)[3L])
                 }
             }
         } else {
@@ -1081,11 +1079,12 @@ seqGetAF_AC_Missing <- function(gdsfile, minor=FALSE, parallel=seqGetParallel(),
     seqGet2bGeno(gdsfile, samp_by_var=TRUE, verbose=verbose)
 }
 
-seqGet2bGeno <- function(gdsfile, samp_by_var=TRUE, verbose=FALSE)
+seqGet2bGeno <- function(gdsfile, samp_by_var=TRUE, ext_nbyte=0L, verbose=FALSE)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
     stopifnot(is.logical(samp_by_var), length(samp_by_var)==1L)
+    stopifnot(is.numeric(ext_nbyte), length(ext_nbyte)==1L, ext_nbyte>=0L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
 
     # get gds node
@@ -1103,10 +1102,10 @@ seqGet2bGeno <- function(gdsfile, samp_by_var=TRUE, verbose=FALSE)
     nvar  <- dm[3L]
     if (isTRUE(samp_by_var))
     {
-        geno <- matrix(as.raw(0xFF), nrow=ceiling(nsamp/4), ncol=nvar)
+        geno <- matrix(as.raw(0xFF), nrow=ceiling(nsamp/4)+ext_nbyte, ncol=nvar)
         cfunc <- .cfunction("FC_SetPackedGenoSxV")
     } else {
-        geno <- matrix(as.raw(0xFF), nrow=ceiling(nvar/4), ncol=nsamp)
+        geno <- matrix(as.raw(0L), nrow=ceiling(nvar/4)+ext_nbyte, ncol=nsamp)
         cfunc <- .cfunction("FC_SetPackedGenoVxS")
     }
     if (length(geno) <= 0) return(geno)
@@ -1116,6 +1115,12 @@ seqGet2bGeno <- function(gdsfile, samp_by_var=TRUE, verbose=FALSE)
     # fill
     seqApply(gdsfile, varnm, FUN=cfunc, as.is="none", .useraw=NA,
         .progress=verbose)
+    # remainder for samp_by_var=FALSE
+    if (!isTRUE(samp_by_var))
+    {
+        n <- nrow(geno)*4L - nvar
+        for (i in seq_len(n)) cfunc(NULL)  # missing genotype
+    }
 
     # output
     geno

@@ -1,3 +1,18 @@
+CHANGES IN VERSION 1.36.1
+-------------------------
+
+UTILITIES
+
+    o new option 'ext_nbyte' in seqGet2bGeno()
+
+BUG FIXES
+
+    o `seqExport()` failed when there is no variant
+
+    o `seqSetFilter(, ret.idx=TRUE)`, see
+      https://github.com/zhengxwen/SeqArray/issues/80
+
+
 CHANGES IN VERSION 1.36.0
 -------------------------
 
@@ -42,7 +57,7 @@ BUG FIXES
 
     o `seqGDS2BED()` with selected samples for sex and phenotype information
 
-    o buf fix in `seqGDS2VCF()` if there is no integer genotype
+    o `seqGDS2VCF()` failed if there is no 'genotype/data' in the GDS file
 
 
 CHANGES IN VERSION 1.32.0
