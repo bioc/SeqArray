@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.36.1
+CHANGES IN VERSION 1.37.2
 -------------------------
 
 UTILITIES
@@ -8,9 +8,30 @@ UTILITIES
     o `seqAlleleCount()` and `seqGetAF_AC_Missing()` return NA instead of zero
       when all genotypes are missing at a site
 
+NEW FEATURES
+
+    o `seqGDS2BED()`` can convert to PLINK BED files with the best-guess
+      genotypes when there are only numeric dosages in the GDS file
+
+
+CHANGES IN VERSION 1.36.2
+-------------------------
+
+BUG FIXES
+
+    o fix the bug at multi-allelic sites with more than 15 different alleles,
+      see https://github.com/zhengxwen/SeqArray/issues/78
+
+
+CHANGES IN VERSION 1.36.1
+-------------------------
+
 BUG FIXES
 
     o `seqExport()` failed when there is no variant
+
+    o `seqSetFilter(, ret.idx=TRUE)`, see
+      https://github.com/zhengxwen/SeqArray/issues/80
 
 
 CHANGES IN VERSION 1.36.0
@@ -57,7 +78,7 @@ BUG FIXES
 
     o `seqGDS2BED()` with selected samples for sex and phenotype information
 
-    o bug fix in `seqGDS2VCF()` if there is no integer genotype
+    o `seqGDS2VCF()` failed if there is no 'genotype/data' in the GDS file
 
 
 CHANGES IN VERSION 1.32.0
