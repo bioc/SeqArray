@@ -506,7 +506,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
 
     stopifnot(inherits(storage.option, "SeqGDSStorageClass"))
     stopifnot(is.character(genotype.var.name), length(genotype.var.name)==1L)
-    stopifnot(!is.na(genotype.var.name))
+    if (is.na(genotype.var.name)) genotype.var.name <- "GT"
 
     stopifnot(is.null(info.import) | is.character(info.import))
     stopifnot(is.null(fmt.import) | is.character(fmt.import))
@@ -605,17 +605,25 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         .cat("Variant Call Format (VCF) Import:")
         if (!inherits(vcf.fn, "connection"))
         {
-            .cat("    file(s):")
-            .cat("        ", basename(vcf.fn), " (",
-                .pretty_size(file.size(vcf.fn)), ")")
+            sz <- file.size(vcf.fn)
+            if (length(vcf.fn) == 1L)
+                .cat("    file:")
+            else
+                .cat("    files: [", .pretty_size(sum(sz)), " totally]")
+            for (i in seq_along(vcf.fn))
+            {
+                .cat("        ", basename(vcf.fn[i]), " (",
+                    .pretty_size(sz[i]), ")")
+            }
         } else {
             .cat("    [connection object]")
         }
         .cat("    file format: ", header$fileformat)
         .cat("    genome reference: ", if (length(reference))
             paste(reference, collapse=", ") else "<unknown>")
-        .cat("    the number of sets of chromosomes (ploidy): ", header$ploidy)
-        .cat("    the number of samples: ", .pretty(length(samp.id)))
+        .cat("    # of sets of chromosomes (ploidy): ", header$ploidy)
+        .cat("    # of samples: ", .pretty(length(samp.id)))
+        .cat("    genotype field: ", genotype.var.name)
         .cat("    genotype storage: ", genotype.storage)
 
         if (!is.character(storage.tmp))

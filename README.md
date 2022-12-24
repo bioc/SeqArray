@@ -77,12 +77,6 @@ R CMD INSTALL SeqArray_latest.tar.gz
 
 
 
-## SeqArray Genotype File Downloads
-
-* [1000 Genomes Project](https://gds-stat.s3.amazonaws.com/download/1000g/index.html)
-
-
-
 ## Examples
 
 ```R
@@ -155,33 +149,19 @@ seqClose(f)
 | [...](https://rdrr.io/bioc/SeqArray/man/) |   |
 
 
-## Benchmarks
-
-### 1. Reading genotypes in random sample subsets (BioC release 3.8 vs 3.4)
-
-(the number of samples is ~100k)
-
-![](vignettes/benchmark_rand_samp.svg)
-
-*(BioC3.8: gdsfmt_v1.18.1, SeqArray_v1.22.6; BioC3.4: gdsfmt_v1.10.1, SeqArray_v1.14.1)*
-
-### 2. Reading annotation data via blocking
-
-`seqBlockApply()` was unexpectedly slow using version ≤ v1.26.2.
-
-See: [https://github.com/zhengxwen/SeqArray/issues/59](https://github.com/zhengxwen/SeqArray/issues/59).
-
-
-*(update in progress ...)*
-
-
 ## File Format Conversion
 
-[gds2bgen](https://github.com/zhengxwen/gds2bgen): Format conversion from BGEN to GDS
+* [seqVCF2GDS()](https://rdrr.io/bioc/SeqArray/man/seqVCF2GDS.html): Format conversion from VCF to GDS
+* [gds2bgen](https://github.com/zhengxwen/gds2bgen): Format conversion from BGEN to GDS
+
+
+## SeqArray GDS File Downloads
+
+* [HapMap Project Phase 2 (release 23)](https://gds-stat.s3.amazonaws.com/download/hapmap/index.html)
+* [1000 Genomes Project](https://gds-stat.s3.amazonaws.com/download/1000g/index.html)
 
 
 ## See Also
 
-[JSeqArray.jl](https://github.com/CoreArray/JSeqArray.jl): Data manipulation of whole-genome sequencing variant data in Julia
-
-[PySeqArray](https://github.com/CoreArray/PySeqArray): Data manipulation of whole-genome sequencing variant data in Python
+* [JSeqArray.jl](https://github.com/CoreArray/JSeqArray.jl): Data manipulation of whole-genome sequencing variant data in Julia
+* [PySeqArray](https://github.com/CoreArray/PySeqArray): Data manipulation of whole-genome sequencing variant data in Python
