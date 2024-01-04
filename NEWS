@@ -1,3 +1,11 @@
+CHANGES IN VERSION 1.43.1
+-------------------------
+
+UTILITIES
+
+    o update the help files of `seqBlockApply()` and `seqUnitApply()`
+
+
 CHANGES IN VERSION 1.42.0
 -------------------------
 
