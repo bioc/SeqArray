@@ -77,11 +77,20 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
     outfmt <- 1L
     if (!inherits(vcf.fn, "connection"))
     {
-        ext <- substring(vcf.fn, nchar(vcf.fn)-2L)
-        if (ext == ".gz")
+        # get the file extension
+        pos <- regexpr("\\.([[:alnum:]]+)$", vcf.fn)
+        ext <- tolower(ifelse(pos > -1L, substring(vcf.fn, pos+1L), ""))
+        if (ext %in% c("gz", "bgz"))
         {
             if (.Platform$OS.type == "windows")
+            {
+                if (isTRUE(use_Rsamtools))
+                {
+                    warning("Rsamtools is not used on Windows.",
+                        immediate.=TRUE)
+                }
                 use_Rsamtools <- FALSE
+            }
             if (isTRUE(use_Rsamtools) && requireNamespace("Rsamtools"))
             {
                 ofile <- .Call(SEQ_bgzip_create, vcf.fn)
@@ -95,11 +104,11 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
                 ofile <- gzfile(vcf.fn, "wb")
                 outfmt <- 3L
             }
-        } else if (ext == ".bz")
+        } else if (ext == "bz")
         {
             ofile <- bzfile(vcf.fn, "wb")
             outfmt <- 4L
-        } else if (ext == ".xz")
+        } else if (ext == "xz")
         {
             ofile <- xzfile(vcf.fn, "wb")
             outfmt <- 5L
@@ -804,13 +813,15 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     bed_flag <- b[3L] == 0L
     if (verbose)
     {
-        cat("    bed file: ", sQuote(bed.fn), "\n        ",
+        cat("    BED file: ", sQuote(bed.fn), "\n        ",
             .pretty_size(file.size(bed.fn)), ", ",
             ifelse(bed_flag, "sample-major mode: [SNP, sample]",
             "SNP-major mode: [sample, SNP]"), "\n", sep="")
     }
 
     ##  read fam.fn  ##
+    if (verbose)
+        cat("    FAM file: ", sQuote(fam.fn), "\n", sep="")
     f <- .open_text(fam.fn, TRUE)
     famD <- read.table(f$con, header=FALSE, comment.char="",
         stringsAsFactors=FALSE)
@@ -827,12 +838,14 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     if (verbose)
     {
         n <- nrow(famD)
-        cat("    fam file: ", sQuote(fam.fn), "\n        ",
+        cat("        ",
             .pretty_size(file.size(fam.fn)), ", ",
             .pretty(n), " sample", .plural(n), "\n", sep="")
     }
 
     ##  read bim.fn  ##
+    if (verbose)
+        cat("    BIM file: ", sQuote(bim.fn), "\n", sep="")
     f <- .open_text(bim.fn, TRUE)
     bimD <- read.table(f$con, header=FALSE, comment.char="",
         stringsAsFactors=FALSE)
@@ -841,7 +854,7 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     if (verbose)
     {
         n <- nrow(bimD)
-        cat("    bim file: ", sQuote(bim.fn), "\n        ",
+        cat("        ",
             .pretty_size(file.size(bim.fn)), ", ",
             .pretty(n), " variant", .plural(n), "\n", sep="")
     }
@@ -880,36 +893,36 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     put.attr.gdsn(n, "source.format", "PLINK BED Format")
 
     # add sample.id
-    if (verbose) cat("    sample.id")
+    if (verbose) cat("    sample.id  ")
     n <- add.gdsn(dstfile, "sample.id", sample.id, compress=compress.annotation,
         closezip=TRUE)
-    .DigestCode(n, digest, verbose)
+    .DigestCode(n, digest, verbose, FALSE)
 
     # add variant.id
-    if (verbose) cat("    variant.id")
+    if (verbose) cat("    variant.id  ")
     n <- add.gdsn(dstfile, "variant.id", seq_len(nrow(bimD)),
         compress=compress.annotation, closezip=TRUE)
-    .DigestCode(n, digest, verbose)
+    .DigestCode(n, digest, verbose, FALSE)
 
     # add position
-    if (verbose) cat("    position")
+    if (verbose) cat("    position  ")
     n <- add.gdsn(dstfile, "position", bimD$pos, storage="int32",
         compress=compress.annotation, closezip=TRUE)
-    .DigestCode(n, digest, verbose)
+    .DigestCode(n, digest, verbose, FALSE)
 
     # add chromosome
-    if (verbose) cat("    chromosome")
+    if (verbose) cat("    chromosome  ")
     n <- add.gdsn(dstfile, "chromosome", bimD$chr, storage="string",
         compress=compress.annotation, closezip=TRUE)
-    .DigestCode(n, digest, verbose)
+    .DigestCode(n, digest, verbose, FALSE)
     # RLE-coded chromosome
     .optim_chrom(dstfile)
 
     # add allele
-    if (verbose) cat("    allele")
+    if (verbose) cat("    allele  ")
     n <- add.gdsn(dstfile, "allele", paste(bimD$allele2, bimD$allele1, sep=","),
         storage="string", compress=compress.annotation, closezip=TRUE)
-    .DigestCode(n, digest, verbose)
+    .DigestCode(n, digest, verbose, FALSE)
 
     # add a folder for genotypes
     if (verbose)
@@ -1098,13 +1111,16 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
         }, split="none", tmp.fn=ptmpfn, nsamp=nrow(famD), psplit=psplit,
             cp=compress.annotation)
 
-        if (verbose) cat("        merging files ...")
-        lapply(ptmpfn, function(fn) {
+        if (verbose) cat("        merging files ... [")
+        lapply(seq_along(ptmpfn), function(i)
+        {
+            cat(ifelse(i>1L, ",", ""), i, sep="")
+            fn <- ptmpfn[i]
             f <- openfn.gds(fn)
             on.exit({ closefn.gds(f); unlink(fn, force=TRUE) })
             append.gdsn(n1, index.gdsn(f, "data"))
         })
-        if (verbose) cat(" [Done]\n      ")
+        if (verbose) cat(" Done]\n      ")
     }
     readmode.gdsn(n1)
     .DigestCode(n1, digest, verbose)
