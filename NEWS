@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.43.2
+CHANGES IN VERSION 1.42.1
 -------------------------
 
 UTILITIES
@@ -10,6 +10,8 @@ UTILITIES
       as a filename extension
 
     o fix the compiler warning: -Wformat-security
+
+    o new option 'include.pheno=TRUE' in `seqBED2GDS()`
 
 
 CHANGES IN VERSION 1.42.0
