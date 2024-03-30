@@ -19,9 +19,8 @@
 // along with SeqArray.
 // If not, see <http://www.gnu.org/licenses/>.
 
+#include <cstdio>
 #include "Index.h"
-#include <stdio.h>
-#include <string.h>
 
 using namespace std;
 
@@ -1093,7 +1092,7 @@ bool CVarApplyList::CallNext()
 // ===========================================================
 
 static const int PROGRESS_BAR_CHAR_NUM = 50;
-static const int PROGRESS_LINE_NUM = 100000;
+static const int PROGRESS_LINE_NUM = 10000;
 
 static const double S_MIN  =  60;
 static const double S_HOUR =  60 * S_MIN;
@@ -1231,19 +1230,19 @@ void CProgress::ShowProgress()
 				ConnPutText(File, "[%s] %2.0f%%, %s %s", bar, p,
 					vCounter < vTotalCount ? "ETC:" : "completed,", time_str(s));
 				if (R_Process_Count && R_Process_Index && (*R_Process_Count>1))
-					ConnPutText(File, " (process %d)", *R_Process_Index);
+					ConnPutText(File, " (process %d/%d)", *R_Process_Index, *R_Process_Count);
 				ConnPutText(File, "\n");
 			} else {
 				ConnPutText(File, "\r[%s] %2.0f%%, %s %s", bar, p,
 					vCounter < vTotalCount ? "ETC:" : "completed,", time_str(s));
 				if (R_Process_Count && R_Process_Index && (*R_Process_Count>1))
-					ConnPutText(File, " (process %d)", *R_Process_Index);
+					ConnPutText(File, " (process %d/%d)", *R_Process_Index, *R_Process_Count);
 				ConnPutText(File, "    ");
 				if (vCounter >= vTotalCount) ConnPutText(File, "\n");
 			}
 		} else {
 			int n = vCounter / PROGRESS_LINE_NUM;
-			n = (n / 10) + (n % 10 ? 1 : 0);
+			n = (n / 100) + (n % 100 ? 1 : 0);
 			string s(n, '.');
 			const char *dt = datetime_str();
 			if (NewLine)
@@ -1255,7 +1254,7 @@ void CProgress::ShowProgress()
 				} else
 					ConnPutText(File, "[: (0 line)] %s", dt);
 				if (R_Process_Count && R_Process_Index && (*R_Process_Count>1))
-					ConnPutText(File, " (process %d)", *R_Process_Index);
+					ConnPutText(File, " (process %d/%d)", *R_Process_Index, *R_Process_Count);
 				ConnPutText(File, "\n");
 			} else {
 				if (vCounter > 0)
@@ -1265,7 +1264,7 @@ void CProgress::ShowProgress()
 				} else
 					ConnPutText(File, "\r[: (0 line)] %s", dt);
 				if (R_Process_Count && R_Process_Index && (*R_Process_Count>1))
-					ConnPutText(File, " (process %d)", *R_Process_Index);
+					ConnPutText(File, " (process %d/%d)", *R_Process_Index, *R_Process_Count);
 			}
 		}
 		(*File->fflush)(File);
@@ -1329,8 +1328,8 @@ void CProgressStdOut::ShowProgress()
 				"\r[%s] 100%%, completed, %s", bar, time_str(s));
 			if (R_Process_Count && R_Process_Index && (*R_Process_Count>1))
 			{
-				snprintf(buffer+n, sizeof(buffer)-n, " (process %d)",
-					*R_Process_Index);
+				snprintf(buffer+n, sizeof(buffer)-n, " (process %d/%d)",
+					*R_Process_Index, *R_Process_Count);
 			}
 			Rprintf("%s\n", buffer);
 		} else if ((interval >= 5) || (vCounter <= 0))
@@ -1341,8 +1340,8 @@ void CProgressStdOut::ShowProgress()
 				"\r[%s] %2.0f%%, ETC: %s", bar, p, time_str(s));
 			if ((vCounter>0) && R_Process_Count && R_Process_Index && (*R_Process_Count>1))
 			{
-				n += snprintf(buffer+n, sizeof(buffer)-n, " (process %d)",
-					*R_Process_Index);
+				n += snprintf(buffer+n, sizeof(buffer)-n, " (process %d/%d)",
+					*R_Process_Index, *R_Process_Count);
 			}
 			strcpy(buffer+n, "    ");
 			Rprintf("%s", buffer);

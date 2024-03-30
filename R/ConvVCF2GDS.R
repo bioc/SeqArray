@@ -38,7 +38,7 @@
 # http://www.1000genomes.org/wiki/analysis/variant-call-format
 #
 
-seqVCF_Header <- function(vcf.fn, getnum=FALSE)
+seqVCF_Header <- function(vcf.fn, getnum=FALSE, verbose=TRUE)
 {
     # check
     if (!inherits(vcf.fn, "connection"))
@@ -49,6 +49,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
         ilist <- 1L
     }
     stopifnot(is.logical(getnum), length(getnum)==1L)
+    stopifnot(is.logical(verbose), length(verbose)==1L)
 
     #########################################################
     # open the vcf file
@@ -115,7 +116,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE)
                     if (isTRUE(getnum))
                     {
                         nVariant <- nVariant + length(s) +
-                            .Call(SEQ_VCF_NumLines, infile, FALSE)
+                            .Call(SEQ_VCF_NumLines, infile, FALSE, verbose)
                     }
                 }
                 break
@@ -580,11 +581,11 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     if (!inherits(vcf.fn, "connection"))
     {
         if (is.null(header))
-            header <- seqVCF_Header(vcf.fn)
+            header <- seqVCF_Header(vcf.fn, verbose=FALSE)
     } else {
         if (is.null(header))
         {
-            header <- seqVCF_Header(vcf.fn)
+            header <- seqVCF_Header(vcf.fn, verbose=FALSE)
             samp.id <- header$sample.id
         } else
             samp.id <- seqVCF_SampID(vcf.fn)
@@ -780,7 +781,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                 ptmpfn=ptmpfn, psplit=psplit, num_array=num_array)
 
             if (verbose)
-                cat("    Done (", date(), ").\n", sep="")
+                cat("    >>> Done (", date(), ") <<<\n", sep="")
 
         } else {
             pnum <- 1L
@@ -794,8 +795,6 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
 
     gfile <- createfn.gds(out.fn)
     on.exit({ if (!is.null(gfile)) closefn.gds(gfile) }, add=TRUE)
-    if (verbose)
-        cat("Output:\n    ", out.fn, "\n", sep="")
 
     put.attr.gdsn(gfile$root, "FileFormat", "SEQ_ARRAY")
     put.attr.gdsn(gfile$root, "FileVersion", "v1.0")
@@ -923,6 +922,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     # VCF INFO
 
     varInfo <- addfolder.gdsn(varAnnot, "info")
+    if (verbose) { prefix <- " "; cat("    INFO:") }
 
     if (!is.null(header$info))
     {
@@ -937,7 +937,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             header$info <- header$info[!flag, ]
         }
 
-        if (nrow(header$info) > 0L)
+        if (NROW(header$info) > 0L)
         {
             int_type <- integer(nrow(header$info))
             int_num  <- suppressWarnings(as.integer(header$info$Number))
@@ -999,6 +999,11 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                 # add
                 if (import.flag[i])
                 {
+                    if (verbose)
+                    {
+                        cat(prefix, header$info$ID[i], sep="")
+                        prefix <- ","
+                    }
                     node <- .AddVar(storage.option, varInfo, header$info$ID[i],
                         storage=mode, valdim=initdim)
                     put.attr.gdsn(node, "Number", header$info$Number[i])
@@ -1023,6 +1028,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             header$info$import.flag <- import.flag
         }
     }
+    if (verbose) cat("\n")
 
 
     ##################################################
@@ -1030,6 +1036,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
 
     # add the FORMAT field
     varFormat <- addfolder.gdsn(varAnnot, "format")
+    if (verbose) { prefix <- " "; cat("    FORMAT:") }
 
     if (!is.null(header$format))
     {
@@ -1083,6 +1090,11 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         # add
         if (import.flag[i])
         {
+            if (verbose)
+            {
+                cat(prefix, header$format$ID[i], sep="")
+                prefix <- ","
+            }
             node <- addfolder.gdsn(varFormat, header$format$ID[i])
             put.attr.gdsn(node, "Number", header$format$Number[i])
             put.attr.gdsn(node, "Type", header$format$Type[i])
@@ -1100,6 +1112,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         header$format$int_num  <- as.integer(int_num)
         header$format$import.flag <- import.flag
     }
+    if (verbose) cat("\n")
 
 
     ##################################################
@@ -1111,6 +1124,8 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     ##################################################
     # sync file
     sync.gds(gfile)
+    if (verbose)
+        cat("Output:\n    ", out.fn, "\n", sep="")
 
 
     ##################################################
@@ -1121,17 +1136,21 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         filterlevels <- header$filter$ID
         linecnt <- double(1L)
 
+        # progress file
+        prog_fn <- paste0(out.fn, ".progress")
+        progfile <- file(prog_fn, "wt")
+        cat(">>> ", out.fn, " <<<\n", file=progfile, sep="")
+        if (verbose)
+            cat("    [Progress Info: ", basename(prog_fn), "]\n", sep="")
+        infile <- NULL
+        on.exit({
+            close(progfile)
+            unlink(paste0(out.fn, ".progress"), force=TRUE)
+            if (!is.null(infile)) close(infile)
+        }, add=TRUE)
+
         if (!inherits(vcf.fn, "connection"))
         {
-            progfile <- file(paste0(out.fn, ".progress"), "wt")
-            cat(out.fn, ":\n", file=progfile, sep="")
-
-            infile <- NULL
-            on.exit({
-                close(progfile)
-                unlink(paste0(out.fn, ".progress"), force=TRUE)
-                if (!is.null(infile)) close(infile)
-            }, add=TRUE)
 
             for (i in seq_along(vcf.fn))
             {
@@ -1160,7 +1179,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                         raise.error = raise.error, filter.levels = filterlevels,
                         start = start, count = count,
                         chr.prefix = ignore.chr.prefix,
-                        progfile = progfile,
+                        progfile = progfile, use.file = TRUE,
                         verbose = verbose),
                     linecnt, new.env())
 
@@ -1187,7 +1206,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                     raise.error = raise.error, filter.levels = filterlevels,
                     start = start, count = count,
                     chr.prefix = ignore.chr.prefix,
-                    progfile = NULL,
+                    progfile = progfile, use.file = FALSE,
                     verbose = verbose),
                 linecnt, new.env())
 

@@ -1,8 +1,8 @@
 // ===========================================================
 //
-// vectorization.h: compiler optimization with vectorization
+// vectorization.cpp: compiler optimization with vectorization
 //
-// Copyright (C) 2016-2022    Xiuwen Zheng
+// Copyright (C) 2016-2024    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -23,7 +23,7 @@
  *	\file     vectorization.c
  *	\author   Xiuwen Zheng [zhengx@u.washington.edu]
  *	\version  1.0
- *	\date     2016-2020
+ *	\date     2016-2024
  *	\brief    compiler optimization with vectorization
  *	\details
 **/
@@ -34,6 +34,11 @@
 
 #include "vectorization.h"
 #include <Rdefines.h>
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 
 /// get the number of non-zero
@@ -861,6 +866,50 @@ void vec_i8_cnt_dosage_alt2(const int8_t *p, int8_t *out, size_t n, int8_t val,
 }
 
 
+/// output (p[0]!=val) + (p[1]!=val) allowing partial missing
+void vec_i8_cnt_dosage_alt2_p(const int8_t *p, int8_t *out, size_t n,
+	int8_t val, int8_t missing, int8_t missing_substitute)
+{
+#ifdef COREARRAY_SIMD_SSE2
+
+	// body, SSE2
+	const __m128i val16  = _mm_set1_epi8(val);
+	const __m128i miss16 = _mm_set1_epi8(missing);
+	const __m128i sub16  = _mm_set1_epi8(missing_substitute);
+	const __m128i two16  = _mm_set1_epi8(2);
+	const __m128i mask   = _mm_set1_epi16(0x00FF);
+	// SSE2 only
+	for (; n >= 16; n-=16)
+	{
+		__m128i w0 = MM_LOADU_128((__m128i const*)p); p += 16;
+		__m128i w1 = MM_LOADU_128((__m128i const*)p); p += 16;
+		__m128i v0 = _mm_packus_epi16(_mm_and_si128(w0, mask), _mm_and_si128(w1, mask));
+		__m128i v1 = _mm_packus_epi16(_mm_srli_epi16(w0, 8), _mm_srli_epi16(w1, 8));
+
+		__m128i b0 = _mm_cmpeq_epi8(v0, miss16);
+		__m128i b1 = _mm_cmpeq_epi8(v1, miss16);
+		__m128i bb = _mm_and_si128(b0, b1);
+
+		__m128i c = two16;
+		c = _mm_add_epi8(c, _mm_or_si128(b0, _mm_cmpeq_epi8(v0, val16)));
+		c = _mm_add_epi8(c, _mm_or_si128(b1, _mm_cmpeq_epi8(v1, val16)));
+		c = _mm_or_si128(_mm_and_si128(bb, sub16), _mm_andnot_si128(bb, c));
+
+		_mm_storeu_si128((__m128i *)out, c);
+		out += 16;
+	}
+
+#endif
+	// tail
+	for (; n > 0; n--, p+=2)
+	{
+		const bool b0 = p[0]==missing, b1 = p[1]==missing;
+		*out ++ = (b0 && b1) ? missing_substitute :
+			(p[0]!=val && !b0) + (p[1]!=val && !b1);
+	}
+}
+
+
 
 // ===========================================================
 // functions for uint8
@@ -1575,6 +1624,56 @@ void vec_i32_cnt_dosage_alt2(const int32_t *p, int32_t *out, size_t n, int32_t v
 }
 
 
+/// output (p[0]!=val) + (p[1]!=val) allowing partial missing
+COREARRAY_DLL_DEFAULT void vec_i32_cnt_dosage_alt2_p(const int32_t *p,
+	int32_t *out, size_t n, int32_t val, int32_t missing,
+	int32_t missing_substitute)
+{
+#ifdef COREARRAY_SIMD_SSE2
+
+	// body, SSE2
+	const __m128i val4  = _mm_set1_epi32(val);
+	const __m128i miss4 = _mm_set1_epi32(missing);
+	const __m128i sub4  = _mm_set1_epi32(missing_substitute);
+	const __m128i two4  = _mm_set1_epi32(2);
+	for (; n >= 4; n-=4)
+	{
+		__m128i v;
+		v = MM_LOADU_128((__m128i const*)p); p += 4;
+		__m128i v0 = _mm_shuffle_epi32(v, _MM_SHUFFLE(0,0,2,0));
+		__m128i v1 = _mm_shuffle_epi32(v, _MM_SHUFFLE(0,0,3,1));
+
+		v = MM_LOADU_128((__m128i const*)p); p += 4;
+		__m128i w0 = _mm_shuffle_epi32(v, _MM_SHUFFLE(0,0,2,0));
+		__m128i w1 = _mm_shuffle_epi32(v, _MM_SHUFFLE(0,0,3,1));
+
+		v0 = _mm_unpacklo_epi64(v0, w0);
+		v1 = _mm_unpacklo_epi64(v1, w1);
+		__m128i b0 = _mm_cmpeq_epi32(v0, miss4);
+		__m128i b1 = _mm_cmpeq_epi32(v1, miss4);
+		__m128i bb = _mm_and_si128(b0, b1);
+
+		__m128i c = two4;
+		c = _mm_add_epi32(c, _mm_or_si128(b0, _mm_cmpeq_epi32(v0, val4)));
+		c = _mm_add_epi32(c, _mm_or_si128(b1, _mm_cmpeq_epi32(v1, val4)));
+		c = _mm_or_si128(_mm_and_si128(bb, sub4), _mm_andnot_si128(bb, c));
+
+		_mm_storeu_si128((__m128i *)out, c);
+		out += 4;
+	}
+
+#endif
+
+	// tail
+	for (; n > 0; n--, p+=2)
+	{
+		const bool b0 = p[0]==missing, b1 = p[1]==missing;
+		*out ++ = (b0 && b1) ? missing_substitute :
+			(p[0]!=val && !b0) + (p[1]!=val && !b1);
+	}
+}
+
+
 /// shifting *p right by 2 bits, assuming p is 2-byte aligned
 void vec_i32_shr_b2(int32_t *p, size_t n)
 {
@@ -1817,3 +1916,8 @@ COREARRAY_DLL_DEFAULT const int8_t *vec_bool_find_true(const int8_t *p,
 	for (; p < end; p++) if (*p) break;
 	return p;
 }
+
+
+#ifdef __cplusplus
+}
+#endif
