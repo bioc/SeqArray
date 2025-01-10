@@ -38,10 +38,13 @@
 # http://www.1000genomes.org/wiki/analysis/variant-call-format
 #
 
-.count_vcf_samtools <- function(fn, parallel)
+.count_vcf_samtools <- function(fn, parallel=FALSE)
 {
+    # check
+    stopifnot(is.character(fn), length(fn)==1L, !is.na(fn))
     if (!requireNamespace("Rsamtools", quietly=TRUE))
         stop("Rsamtools should be installed when 'parallel' is not FALSE.")
+    # check the indexing file
     idxfn <- paste0(fn, ".csi")
     if (!file.exists(idxfn))
     {
@@ -49,23 +52,41 @@
         if (!file.exists(idxfn))
             stop("The indexing file should exist (either .csi or .tbi) when 'parallel' is used.")
     }
-    f <- Rsamtools::TabixFile(fn, idxfn)
-    open(f)
-    s <- Rsamtools::seqnamesTabix(f)
-    close(f)
-    # generate Granges object
-    each <- 5000000L
-    p <- (seq_len(100L)-1L) * each + 1L
-    ir <- IRanges::IRanges(p, width=each)
-    gr <- GenomicRanges::GRanges(rep(s, each=length(ir)), rep(ir, length(s)))
-    lst <- seqParApply(parallel, 1:length(gr),
-        FUN=function(i, vcffn, idxfn, gr)
+    # process
+    pnum <- .NumParallel(parallel)
+    if (pnum<=1L || isTRUE(file.size(fn) <= 67108864L))
+    {
+        # if file size <= 64MB
+        f <- Rsamtools::TabixFile(fn, idxfn)
+        open(f)
+        on.exit(close(f))
+        unlist(Rsamtools::countTabix(f), use.names=FALSE)
+    } else {
+        f <- Rsamtools::TabixFile(fn, idxfn)
+        open(f)
+        s <- Rsamtools::seqnamesTabix(f)
+        close(f)
+        # generate Granges object
+        if (length(s) < pnum)
         {
-            f <- Rsamtools::TabixFile(vcffn, idxfn)
-            open(f); on.exit(close(f))
-            unlist(Rsamtools::countTabix(f, param=gr[i,]), use.names=FALSE)
-        }, vcffn=fn, idxfn=idxfn, gr=gr)
-    do.call(sum, lst)
+            each <- 5000000L
+            p <- (seq_len(100L)-1L) * each + 1L
+            r <- IRanges::IRanges(p, width=each)
+            gr <- GenomicRanges::GRanges(rep(s, each=length(r)),
+                rep(r, length(s)))
+        } else {
+            gr <- GenomicRanges::GRanges(s, IRanges::IRanges(1L, 2^29))
+        }
+        # parallel
+        lst <- seqParApply(parallel, 1:length(gr),
+            FUN=function(i, vcffn, idxfn, gr)
+            {
+                f <- Rsamtools::TabixFile(vcffn, idxfn)
+                open(f); on.exit(close(f))
+                unlist(Rsamtools::countTabix(f, param=gr[i,]), use.names=FALSE)
+            }, vcffn=fn, idxfn=idxfn, gr=gr)
+        do.call(sum, lst)
+    }
 }
 
 seqVCF_Header <- function(vcf.fn, getnum=FALSE, parallel=FALSE, verbose=TRUE)
@@ -524,7 +545,8 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     storage.option="LZMA_RA", info.import=NULL, fmt.import=NULL,
     genotype.var.name="GT", ignore.chr.prefix="chr",
     scenario=c("general", "imputation"), reference=NULL, start=1L, count=-1L,
-    optimize=TRUE, raise.error=TRUE, digest=TRUE, parallel=FALSE, verbose=TRUE)
+    variant_count=NA_integer_, optimize=TRUE, raise.error=TRUE, digest=TRUE,
+    parallel=FALSE, verbose=TRUE)
 {
     # check
     if (!inherits(vcf.fn, "connection"))
@@ -571,20 +593,15 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     {
         if (pnum > 1L)
             stop("No parallel support when the input is a connection object.")
-    }
-
-    if (is.character(vcf.fn))
-        variant_count <- attr(vcf.fn, "variant_count")
-    else
-        variant_count <- NULL
-    if (!is.null(variant_count))
+        if (length(variant_count)!=1L || !is.na(variant_count))
+            warning("'variant_count' is not used in seqVCF2GDS() when 'vcf.fn' is a connection object.")
+    } else if (!identical(variant_count, NA_integer_))
     {
         if (!is.numeric(variant_count))
-            stop("the attribute 'variant_count' of 'vcf.fn' should be a numeric vector.")
+            stop("'variant_count' should be a numeric vector.")
         if (length(variant_count) != length(vcf.fn))
-            stop("the attribute 'variant_count' of 'vcf.fn' should be as the same length as 'vcf.fn'.")
+            stop("'variant_count' and 'vcf.fn' should have the same length.")
     }
-
     if (verbose) cat(date(), "\n", sep="")
 
     genotype.storage <- "bit2"
@@ -756,16 +773,26 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         if (verbose)
         {
             cat("    # of cores/jobs: ", pnum, "\n", sep="")
-            cat("    calculating the total number of variants ...\n")
+            cat("    calculating the total number of variants")
+            if (requireNamespace("Rsamtools", quietly=TRUE))
+                cat(" using Rsamtools")
+            cat(" ...\n")
             flush.console()
         }
 
         # get the number of variants in each VCF file
-        num_array <- vapply(vcf.fn, function(fn)
+        for (i in seq_along(vcf.fn))
         {
-            seqVCF_Header(fn, getnum=TRUE, parallel=parallel)$num.variant
-        }, 0L)
-        num_var <- sum(num_array)
+            v <- variant_count[i]
+            if (is.na(v) || (v < 0L))
+            {
+                fn <- vcf.fn[i]
+                variant_count[i] <- seqVCF_Header(fn, getnum=TRUE,
+                    parallel=parallel, verbose=FALSE)$num.variant
+            }
+        }
+        num_var <- sum(variant_count)
+        if (anyNA(num_var)) stop("Getting invalid # of variants.")
 
         if (start < 1L)
             stop("'start' should be a positive integer if conversion in parallel.")
@@ -797,31 +824,25 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             seqParallel(parallel, NULL, FUN = function(
                 vcf.fn, header, storage.option, info.import, fmt.import,
                 genotype.var.name, ignore.chr.prefix, scenario, optim,
-                raise.err, ptmpfn, psplit, num_array)
+                raise.err, ptmpfn, psplit, variant_count)
             {
-                # load package
-                library(SeqArray, quietly=TRUE, verbose=FALSE)
-
-                attr(vcf.fn, "variant_count") <- num_array
                 i <- process_index  # the process id, starting from one
-
-                seqVCF2GDS(vcf.fn, ptmpfn[i], header=oldheader,
+                SeqArray::seqVCF2GDS(vcf.fn, ptmpfn[i], header=oldheader,
                     storage.option=storage.option, info.import=info.import,
                     fmt.import=fmt.import, genotype.var.name=genotype.var.name,
                     ignore.chr.prefix=ignore.chr.prefix,
                     start = psplit[[1L]][i], count = psplit[[2L]][i],
+                    variant_count=variant_count,
                     optimize=optim, scenario=scenario, raise.error=raise.err,
                     digest=FALSE, parallel=FALSE, verbose=FALSE)
-
-                invisible()
-
+                invisible()  # return
             }, split="none",
                 vcf.fn=vcf.fn, header=header, storage.option=storage.option,
                 info.import=info.import, fmt.import=fmt.import,
                 genotype.var.name=genotype.var.name,
                 ignore.chr.prefix=ignore.chr.prefix, scenario=scenario,
                 optim=optimize, raise.err=raise.error,
-                ptmpfn=ptmpfn, psplit=psplit, num_array=num_array)
+                ptmpfn=ptmpfn, psplit=psplit, variant_count=variant_count)
 
             if (verbose)
                 cat("    >>> Done (", date(), ") <<<\n", sep="")

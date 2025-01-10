@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.46.1
+CHANGES IN VERSION 1.46.2
 -------------------------
 
 UTILITIES
@@ -7,6 +7,10 @@ UTILITIES
       variants when 'getnum=TRUE' (the Rsamtools package should be installed);
       `seqVCF2GDS()` is faster when obtaining the number of variants for
       splitting files.
+
+    o new 'variant_count' in `seqVCF2GDS()` to specify the number of variants
+      in the VCF file when it is known; it is only applicable when multiple
+      cores are used.
 
 
 CHANGES IN VERSION 1.46.0
