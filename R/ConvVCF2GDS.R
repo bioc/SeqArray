@@ -89,7 +89,8 @@
     }
 }
 
-seqVCF_Header <- function(vcf.fn, getnum=FALSE, parallel=FALSE, verbose=TRUE)
+seqVCF_Header <- function(vcf.fn, getnum=FALSE, use_Rsamtools=NA,
+    parallel=FALSE, verbose=TRUE)
 {
     # check
     if (!inherits(vcf.fn, "connection"))
@@ -100,6 +101,7 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE, parallel=FALSE, verbose=TRUE)
         ilist <- 1L
     }
     stopifnot(is.logical(getnum), length(getnum)==1L)
+    stopifnot(is.logical(use_Rsamtools), length(use_Rsamtools)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
     if (getnum)
         njobs <- .NumParallel(parallel)
@@ -168,7 +170,14 @@ seqVCF_Header <- function(vcf.fn, getnum=FALSE, parallel=FALSE, verbose=TRUE)
                     }
                     if (isTRUE(getnum))
                     {
+                        call_count_vcf <- FALSE
                         if (njobs > 1L)
+                        {
+                            if (is.na(use_Rsamtools))
+                                use_Rsamtools <- requireNamespace("Rsamtools", quietly=TRUE)
+                            if (use_Rsamtools) call_count_vcf <- TRUE
+                        }
+                        if (call_count_vcf)
                         {
                             nVariant <- nVariant +
                                 .count_vcf_samtools(vcf.fn[i], parallel)
@@ -546,7 +555,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     genotype.var.name="GT", ignore.chr.prefix="chr",
     scenario=c("general", "imputation"), reference=NULL, start=1L, count=-1L,
     variant_count=NA_integer_, optimize=TRUE, raise.error=TRUE, digest=TRUE,
-    parallel=FALSE, verbose=TRUE)
+    use_Rsamtools=NA, parallel=FALSE, verbose=TRUE)
 {
     # check
     if (!inherits(vcf.fn, "connection"))
@@ -585,6 +594,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     stopifnot(is.logical(optimize), length(optimize)==1L)
     stopifnot(is.logical(raise.error), length(raise.error)==1L)
     stopifnot(is.logical(digest) | is.character(digest), length(digest)==1L)
+    stopifnot(is.logical(use_Rsamtools), length(use_Rsamtools)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
 
     pnum <- .NumParallel(parallel)
@@ -773,10 +783,18 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         if (verbose)
         {
             cat("    # of cores/jobs: ", pnum, "\n", sep="")
-            cat("    calculating the total number of variants")
-            if (requireNamespace("Rsamtools", quietly=TRUE))
-                cat(" using Rsamtools")
-            cat(" ...\n")
+            a <- variant_count < 0L
+            if (length(a) < length(vcf.fn)) a[length(vcf.fn)] <- NA
+            if (anyNA(a) || any(a, na.rm=TRUE))
+            {
+                cat("    calculating the total number of variants")
+                if (!isFALSE(use_Rsamtools))
+                {
+                    if (requireNamespace("Rsamtools", quietly=TRUE))
+                        cat(" using Rsamtools")
+                }
+                cat(" ...\n")
+            }
             flush.console()
         }
 
@@ -788,7 +806,8 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             {
                 fn <- vcf.fn[i]
                 variant_count[i] <- seqVCF_Header(fn, getnum=TRUE,
-                    parallel=parallel, verbose=FALSE)$num.variant
+                    use_Rsamtools=use_Rsamtools, parallel=parallel,
+                    verbose=FALSE)$num.variant
             }
         }
         num_var <- sum(variant_count)
@@ -819,6 +838,8 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                     .pretty(psplit[[1L]] + psplit[[2L]] - 1L)), sep="")
                 flush.console()
             }
+            # unlimit the last one
+            psplit[[2L]][length(psplit[[2L]])] <- -1L
 
             # conversion in parallel
             seqParallel(parallel, NULL, FUN = function(
