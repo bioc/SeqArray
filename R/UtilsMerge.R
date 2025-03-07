@@ -1002,10 +1002,11 @@ seqMerge <- function(gds.fn, out.fn, storage.option="LZMA_RA",
 #######################################################################
 # Reset the variant IDs in multiple GDS files
 #
-seqResetVariantID <- function(gds.fn, set=NULL, digest=TRUE, optimize=TRUE,
-    verbose=TRUE)
+seqResetVariantID <- function(gds.fn, start=1L, set=NULL, digest=TRUE,
+    optimize=TRUE, verbose=TRUE)
 {
     stopifnot(is.character(gds.fn), length(gds.fn)>0L)
+    stopifnot(is.numeric(start), length(start)==1L, start>=1L)
     stopifnot(is.null(set) || is.logical(set))
     if (is.logical(set))
         stopifnot(length(gds.fn) == length(set))
@@ -1013,23 +1014,30 @@ seqResetVariantID <- function(gds.fn, set=NULL, digest=TRUE, optimize=TRUE,
     stopifnot(is.logical(optimize), length(optimize)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
 
-    n <- 0L
-    i <- 1L
-    for (k in seq_along(gds.fn))
+    n <- start - 1L
+    for (i in seq_along(gds.fn))
     {
-        fn <- gds.fn[k]
+        fn <- gds.fn[i]
         if (verbose)
             cat(sprintf("[%2d] %s ...", i, fn))
-        i <- i + 1L
         f <- seqOpen(fn, readonly=FALSE)
         dp <- objdesp.gdsn(index.gdsn(f, "variant.id"))
         len <- prod(dp$dim)
-        v <- seq_len(len) + n
-        if (is.null(set) || isTRUE(set[k]))
+        # check integer overflow
+        new_n <- n + as.double(len)
+        stopifnot(is.finite(new_n))
+        if (new_n < .Machine$integer.max)
         {
-            nd <- add.gdsn(f, "variant.id", v, storage="int", compress=dp$compress,
+            v <- seq.int(n+1L, length.out=len)
+            stopifnot(is.integer(v))
+        } else {
+            v <- seq(n+1, length.out=len)
+            stopifnot(is.double(v))
+        }
+        if (is.null(set) || isTRUE(set[i]))
+        {
+            nd <- add.gdsn(f, "variant.id", v, compress=dp$compress,
                 replace=TRUE, closezip=TRUE)
-            n <- n + len
             if (digest)
                 .DigestCode(nd, TRUE, verbose)
             seqClose(f)
@@ -1037,18 +1045,22 @@ seqResetVariantID <- function(gds.fn, set=NULL, digest=TRUE, optimize=TRUE,
                 cleanup.gds(fn, verbose=FALSE)
             if (verbose)
             {
-                cat("    set new variant id: ", v[1L], " ... ", v[length(v)],
-                    " [", length(v), "]\n", sep="")
+                cat("    set new variant id: ",
+                    .pretty(v[1L]), " ... ", .pretty(v[length(v)]),
+                    " [n=", .pretty(length(v)), "]\n", sep="")
             }
         } else {
-            n <- n + len
             seqClose(f)
             if (verbose)
             {
-                cat("\n    skip variant id: ", v[1L], " ... ", v[length(v)],
-                    " [", length(v), "]\n", sep="")
+                cat("\n    skip variant id: ",
+                    .pretty(v[1L]), " ... ", .pretty(v[length(v)]),
+                    " [n=", length(v), "]\n", sep="")
             }
         }
+        # update
+        if (new_n < .Machine$integer.max) new_n <- as.integer(new_n)
+        n <- new_n
     }
 
     invisible()

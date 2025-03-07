@@ -1,3 +1,13 @@
+CHANGES IN VERSION 1.47.5
+-------------------------
+
+UTILITIES
+
+    o Tweak display in `seqResetVariantID()`
+
+    o new argument 'start' in `seqResetVariantID()`
+
+
 CHANGES IN VERSION 1.46.2
 -------------------------
 
