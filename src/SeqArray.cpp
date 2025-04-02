@@ -2,7 +2,7 @@
 //
 // SeqArray.cpp: the C++ codes for the SeqArray package
 //
-// Copyright (C) 2013-2024    Xiuwen Zheng
+// Copyright (C) 2013-2025    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -1363,6 +1363,29 @@ COREARRAY_DLL_EXPORT SEXP SEQ_ClearVarMap(SEXP gdsfile)
 
 
 // ===========================================================
+// Get or clear the memory buffer storing variant positions
+// ===========================================================
+
+COREARRAY_DLL_EXPORT SEXP SEQ_BufferPosition(SEXP gdsfile, SEXP clear)
+{
+	int clear_flag = Rf_asLogical(clear);
+	COREARRAY_TRY
+		CFileInfo &File = GetFileInfo(gdsfile);
+		if (clear_flag == 1)  // TRUE
+		{
+			File.ClearPosition();
+			rv_ans = R_NilValue;
+		} else {
+			vector<C_Int32> &pos = File.Position();
+			SEXP n = Rf_ScalarInteger(pos.size());  // # of positions
+			rv_ans = R_MakeExternalPtr(&pos[0], R_NilValue, n);
+		}
+	COREARRAY_CATCH
+}
+
+
+
+// ===========================================================
 // Get system configuration
 // ===========================================================
 
@@ -1543,20 +1566,26 @@ COREARRAY_DLL_EXPORT SEXP SEQ_ProgressAdd(SEXP ref, SEXP inc)
 // Initialize R objects when the package is loaded
 // ===========================================================
 
+extern SEXP LANG_NEW_RLE;
+
 COREARRAY_DLL_EXPORT SEXP SEQ_Pkg_Init(SEXP dim_name, SEXP proc_cnt,
-	SEXP proc_idx)
+	SEXP proc_idx, SEXP lang_eval)
 {
+	// .dim_name
 	R_Geno_Dim2_Name = VECTOR_ELT(dim_name, 0);
 	R_Geno_Dim3_Name = VECTOR_ELT(dim_name, 1);
 	R_Dosage_Name = VECTOR_ELT(dim_name, 2);
 	R_Data_Name = VECTOR_ELT(dim_name, 3);
 	R_Data_Dim2_Name = VECTOR_ELT(dim_name, 4);
 	R_Data_ListClass = VECTOR_ELT(dim_name, 5);
+	// process_count, process_index
 	R_Process_Count = INTEGER(proc_cnt);
 	R_Process_Index = INTEGER(proc_idx);
+	// lang_eval
+	LANG_NEW_RLE = VECTOR_ELT(lang_eval, 0);
+	// return
 	return R_NilValue;
 }
-
 
 
 
@@ -1622,7 +1651,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 
 	static R_CallMethodDef callMethods[] =
 	{
-		CALL(SEQ_Pkg_Init, 3),
+		CALL(SEQ_Pkg_Init, 4),
 		CALL(SEQ_ExternalName0, 0),         CALL(SEQ_ExternalName1, 1),
 		CALL(SEQ_ExternalName2, 2),         CALL(SEQ_ExternalName3, 3),
 		CALL(SEQ_ExternalName4, 4),         CALL(SEQ_ExternalName5, 5),
@@ -1653,7 +1682,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 		CALL(SEQ_SelectFlag, 2),            CALL(SEQ_ResetChrom, 1),
 
 		CALL(SEQ_IntAssign, 2),             CALL(SEQ_AppendFill, 3),
-		CALL(SEQ_ClearVarMap, 1),
+		CALL(SEQ_ClearVarMap, 1),           CALL(SEQ_BufferPosition, 2),
 
 		CALL(SEQ_bgzip_create, 1),
 		CALL(SEQ_ToVCF_Init, 6),            CALL(SEQ_ToVCF_Done, 0),

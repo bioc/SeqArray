@@ -2,7 +2,7 @@
 //
 // GetData.cpp: Get data from a SeqArray GDS file
 //
-// Copyright (C) 2015-2024    Xiuwen Zheng
+// Copyright (C) 2015-2025    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -58,6 +58,7 @@ static const string VAR_GENO_INDEX("@genotype");
 static const string VAR_PHASE("phase");
 
 // variable list: internally generated
+static const string VAR_CHROM_RLE("$chromosome");
 static const string VAR_DOSAGE("$dosage");
 static const string VAR_DOSAGE_ALT("$dosage_alt");
 static const string VAR_DOSAGE_ALT2("$dosage_alt2");
@@ -150,6 +151,79 @@ static SEXP get_chrom(CFileInfo &File, TVarMap &Var, void *param)
 	}
 	UNPROTECT(1);
 	return rv_ans;
+}
+
+
+// Using the S4Vectors package for RLE-coded chromosome
+
+extern "C" SEXP LANG_NEW_RLE = NULL;
+
+/// create a S4Vectors::Rle object
+inline static SEXP new_s4vectors_rle(const vector<string> &val,
+	const vector<int> &len)
+{
+	// LANG_NEW_RLE = quote(new("Rle", values=values, lengths=lengths))
+	SEXP epr = PROTECT(LANG_NEW_RLE);
+	const int n = val.size();
+	// parameter: values
+	SEXP var_val = PROTECT(NEW_CHARACTER(n));
+	if (n > 0)
+	{
+		for (int i=0; i < n; i++)
+		{
+			const string &s = val[i];
+			SET_STRING_ELT(var_val, i, Rf_mkCharLen(s.c_str(), s.size()));
+		}
+	}
+	// parameter: lengths
+	SEXP var_len = PROTECT(NEW_INTEGER(n));
+	if (n > 0)
+		memcpy(INTEGER(var_len), &len[0], sizeof(int)*n);
+	// set parameters
+	SETCADDR(epr, var_val);   // parameter: values
+	SETCADDDR(epr, var_len);  // parameter: lengths
+	// call
+	SEXP rv = PROTECT(Rf_eval(epr, R_GlobalEnv));
+	// free
+	SETCADDR(epr, R_NilValue);   // parameter: values
+	SETCADDDR(epr, R_NilValue);  // parameter: lengths
+	UNPROTECT(4);
+	// output
+	return rv;
+}
+
+/// get RLE-coded chromosome from '$chromosome'
+static SEXP get_chrom_rle(CFileInfo &File, TVarMap &Var, void *param)
+{
+	int n = File.VariantSelNum();
+	vector<int> rle_len;
+	vector<string> rle_val;
+	if (n > 0)
+	{
+		CChromIndex &Chrom = File.Chromosome();
+		TSelection &Sel = File.Selection();
+		C_BOOL *s = Sel.pVariant + Sel.varStart;
+		size_t i = Sel.varStart;
+		string lastS;
+		for (; n > 0; i++)
+		{
+			if (*s++)
+			{
+				const string &ss = Chrom[i];
+				if ((ss != lastS) || rle_len.empty())
+				{
+					rle_len.push_back(1);
+					rle_val.push_back(ss);
+					lastS = ss;
+				} else {
+					rle_len.back()++;
+				}
+				n--;
+			}
+		}
+	}
+	// return S4Vectors::Rle
+	return new_s4vectors_rle(rle_val, rle_len);
 }
 
 /// get variant-specific data from node without indexing (e.g., variant.id)
@@ -1141,7 +1215,11 @@ COREARRAY_DLL_LOCAL TVarMap &VarGetStruct(CFileInfo &File, const string &name)
 		} else
 		// ===========================================================
 		// internally generated variables
-		if (name == VAR_DOSAGE)
+		if (name == VAR_CHROM_RLE)
+		{
+			vm.Init(File, VAR_CHROM, get_chrom_rle);
+			CHECK_VARIANT_ONE_DIMENSION
+		} else if (name == VAR_DOSAGE)
 		{
 			vm.Func = get_dosage;
 		} else if (name == VAR_DOSAGE_ALT)
