@@ -10,13 +10,25 @@
 #######################################################################
 
 # R expressions called in C internally
-lang_eval <- list(
+.lang_eval <- list(
     new_rle = quote(new("Rle", values=values, lengths=lengths))
+)
+
+# Compressed Lists in IRanges
+.List_IRanges_value <- list(
+    logical   = LogicalList(),
+    integer   = IntegerList(),
+    numeric   = NumericList(),
+    character = CharacterList(),
+    raw       = RawList(),
+    factor    = FactorList(),
+    "unlistData", "partitioning", "end"
 )
 
 .onLoad <- function(lib, pkg)
 {
-    .Call(SEQ_Pkg_Init, .dim_name, process_count, process_index, lang_eval)
+    .Call(SEQ_Pkg_Init, .dim_name, process_count, process_index,
+        .lang_eval, .List_IRanges_value)
     TRUE
 }
 
