@@ -329,7 +329,7 @@ seqParallel <- function(cl=seqGetParallel(), gdsfile, FUN,
 
     # get the number of workers
     njobs <- .NumParallel(cl)
-    parallel <- .McoreParallel(cl)
+    cl <- .McoreParallel(cl)
     if (njobs <= 1L)
     {
         if (is.function(.initialize)) .initialize(1L, .initparam)
@@ -363,6 +363,7 @@ seqParallel <- function(cl=seqGetParallel(), gdsfile, FUN,
     } else if (inherits(cl, "cluster"))
     {
         ## multiple processes with a predefined cluster
+	njobs <- length(cl)  # in case, .McoreParallel() changes cl
 
         if (is.function(.initialize))
         {
