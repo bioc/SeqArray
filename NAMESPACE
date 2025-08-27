@@ -16,7 +16,8 @@ useDynLib(SeqArray,
     SEQ_Apply_Variant, SEQ_Apply_Sample, SEQ_BApply_Variant,
     SEQ_ConvBED2GDS,
     SEQ_SelectFlag, SEQ_ResetChrom,
-    SEQ_IntAssign, SEQ_AppendFill, SEQ_ClearVarMap, SEQ_BufferPosition,
+    SEQ_SetProcess, SEQ_SetProcessBlock, SEQ_SecToTime,
+    SEQ_AppendFill, SEQ_ClearVarMap, SEQ_BufferPosition,
     SEQ_Pkg_Init,
     SEQ_bgzip_create, SEQ_Progress, SEQ_ProgressAdd,
     SEQ_Unit_SlidingWindows,
@@ -31,8 +32,8 @@ import(gdsfmt)
 importFrom(stats, median, sd)
 importFrom(parallel, clusterApply, clusterApplyLB, clusterCall, detectCores,
     makeCluster, makeForkCluster, mclapply, stopCluster)
-importFrom(utils, read.table, flush.console, write.table, str, tail,
-    type.convert)
+importFrom(utils, capture.output, flush.console, read.table, write.table,
+    str, tail, type.convert)
 importFrom(digest, digest)
 
 importFrom(S4Vectors, DataFrame, SimpleList)
@@ -55,7 +56,6 @@ S3method(summary, SeqUnitListClass)
 
 # Export all names
 exportPattern("^seq*")
-export(.Last.lib)
 exportClasses(SeqVarGDSClass)
 exportMethods(granges, ref, alt, qual, filt, header, fixed, info, geno,
     colData, rowRanges)

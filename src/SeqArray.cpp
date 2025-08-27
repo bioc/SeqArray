@@ -1123,9 +1123,9 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SplitSelection(SEXP gdsfile, SEXP split,
 
 
 /// split the selected variants according to multiple processes
-COREARRAY_DLL_EXPORT SEXP SEQ_SplitSelectionX(SEXP gdsfile, SEXP index, SEXP split,
-	SEXP sel_idx, SEXP sel_variant, SEXP sel_sample, SEXP bl_size, SEXP selection_flag,
-	SEXP totlen)
+COREARRAY_DLL_EXPORT SEXP SEQ_SplitSelectionX(SEXP gdsfile, SEXP index,
+	SEXP split, SEXP sel_idx, SEXP sel_variant, SEXP sel_sample, SEXP bl_size,
+	SEXP selection_flag, SEXP totlen)
 {
 	int job_idx = Rf_asInteger(index) - 1;  // starting from 0
 	const bool split_by_variant = Rf_asLogical(split)==TRUE;
@@ -1284,14 +1284,46 @@ COREARRAY_DLL_EXPORT SEXP SEQ_ResetChrom(SEXP gdsfile)
 
 
 // ===========================================================
-// Get system configuration
+// Initialize the process variables
 // ===========================================================
 
-COREARRAY_DLL_EXPORT SEXP SEQ_IntAssign(SEXP Dst, SEXP Src)
+COREARRAY_DLL_EXPORT SEXP SEQ_SetProcess(SEXP proc_idx, SEXP proc_cnt,
+	SEXP status_fname)
 {
-	INTEGER(Dst)[0] = Rf_asInteger(Src);
-//	void *p = INTEGER(Dst);
-//	Rprintf("addr: %p, val: %d\n", p, Rf_asInteger(Src));
+	// process_index
+	if (!Rf_isNull(proc_idx))
+		*R_Process_Index = Rf_asInteger(proc_idx);
+	// process_count
+	if (!Rf_isNull(proc_cnt))
+		*R_Process_Count = Rf_asInteger(proc_cnt);
+	// process_status_fname
+	if (!Rf_isNull(status_fname))
+	{
+		R_Process_StatusFName.clear();
+		if (Rf_isString(status_fname))
+		{
+			const int n = Rf_length(status_fname);
+			R_Process_StatusFName.resize(n);
+			for (int i=0; i < n; i++)
+			{
+				SEXP s = STRING_ELT(status_fname, i);
+				R_Process_StatusFName[i] = Rf_translateChar(s);
+			}
+		}
+	}
+	// return
+	return R_NilValue;
+}
+
+COREARRAY_DLL_EXPORT SEXP SEQ_SetProcessBlock(SEXP blk_idx, SEXP blk_cnt)
+{
+	// block_index
+	if (!Rf_isNull(blk_idx))
+		R_Block_Index = Rf_asInteger(blk_idx);
+	// block_count
+	if (!Rf_isNull(blk_cnt))
+		R_Block_Count = Rf_asInteger(blk_cnt);
+	// return
 	return R_NilValue;
 }
 
@@ -1524,7 +1556,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Debug(SEXP gdsfile)
 
 static void free_progress(SEXP ref)
 {
-    CProgressStdOut *obj = (CProgressStdOut*)R_ExternalPtrAddr(ref);
+    CProgress *obj = (CProgress*)R_ExternalPtrAddr(ref);
     if (obj) delete obj;
 }
 
@@ -1538,7 +1570,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_Progress(SEXP Count, SEXP NProc)
 	if (nproc <= 0)
 		Rf_error(".seqProgress(): the number of processes should be > 0.");
 	COREARRAY_TRY
-		CProgressStdOut *obj = new CProgressStdOut(TotalCount, nproc, true);
+		CProgress *obj = new CProgress(TotalCount, NULL, true);
 		rv_ans = PROTECT(R_MakeExternalPtr(obj, R_NilValue, R_NilValue));
 		R_RegisterCFinalizerEx(rv_ans, free_progress, TRUE);
 		Rf_setAttrib(rv_ans, R_ClassSymbol, Rf_mkString("SeqClass_Progress"));
@@ -1554,10 +1586,23 @@ COREARRAY_DLL_EXPORT SEXP SEQ_ProgressAdd(SEXP ref, SEXP inc)
 		Rf_error("the object should be created by .seqProgress()");
 	C_Int64 v = (C_Int64)Rf_asReal(inc);
 	COREARRAY_TRY
-		CProgressStdOut *obj = (CProgressStdOut*)R_ExternalPtrAddr(ref);
+		CProgress *obj = (CProgress*)R_ExternalPtrAddr(ref);
 		if (obj) obj->Forward(v);
 		rv_ans = Rf_ScalarReal(obj->Counter());
 	COREARRAY_CATCH
+}
+
+/// convert seconds to time
+COREARRAY_DLL_EXPORT SEXP SEQ_SecToTime(SEXP second)
+{
+	if (!Rf_isNumeric(second))
+		Rf_error("'second' should be a numeric vector.");
+	const int n = Rf_length(second);
+	const double *s = REAL(second);
+	SEXP ans = NEW_CHARACTER(n);
+	for (int i=0; i < n; i++)
+		SET_STRING_ELT(ans, i, Rf_mkChar(time_str(s[i])));
+	return ans;
 }
 
 
@@ -1686,11 +1731,13 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 		CALL(SEQ_ConvBED2GDS, 6),
 		CALL(SEQ_SelectFlag, 2),            CALL(SEQ_ResetChrom, 1),
 
-		CALL(SEQ_IntAssign, 2),             CALL(SEQ_AppendFill, 3),
+		CALL(SEQ_SetProcess, 3),            CALL(SEQ_SetProcessBlock, 2),
+		CALL(SEQ_AppendFill, 3),
 		CALL(SEQ_ClearVarMap, 1),           CALL(SEQ_BufferPosition, 2),
 
 		CALL(SEQ_bgzip_create, 1),
 		CALL(SEQ_ToVCF_Init, 6),            CALL(SEQ_ToVCF_Done, 0),
+		CALL(SEQ_SecToTime, 1),
 
 		CALL(SEQ_Progress, 2),              CALL(SEQ_ProgressAdd, 2),
 

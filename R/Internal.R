@@ -9,12 +9,19 @@
 #######################################################################
 # Package-wide variables
 
-.packageEnv <- new.env()
+.PkgEnv <- new.env()
+
+# parallel objects
+assign("seqarray.parallel", NULL, envir=.PkgEnv)
+assign("seqarray.multicore", NULL, envir=.PkgEnv)
 
 # the index of current children process
-process_index <- 1L
+process_index <- 0L
 # the number of children processes
-process_count <- 1L
+process_count <- 0L
+
+# the list of file names for the status of children processes
+# .PkgEnv$process_status_fname <- NULL
 
 ## R objects for class, dimnames ...
 .dim_name <- list(
@@ -25,6 +32,8 @@ process_count <- 1L
     data_dim2 = list(sample=NULL, variant=NULL),
     data_class = "SeqVarDataList"
 )
+
+process_balancing_multiple <- 3L
 
 
 #######################################################################
@@ -140,6 +149,21 @@ process_count <- 1L
     isTRUE(flag) && requireNamespace("crayon", quietly=TRUE)
 }
 
+.tm <- function() strftime(Sys.time(), "%Y-%m-%d %H:%M:%S")
+
+.process_verbose <- function(verbose, to_delete=TRUE)
+{
+    fn <- .PkgEnv$process_status_fname[process_index]
+    if (is.character(fn) && (length(fn)==1L))
+    {
+        attr(fn, "verbose") <- isTRUE(verbose)
+        # delete the file after the job is done if to_delete is TRUE
+        attr(fn, "delete") <- isTRUE(to_delete)
+        fn
+    } else
+        isTRUE(verbose)
+}
+
 
 
 #######################################################################
@@ -153,14 +177,14 @@ process_count <- 1L
 {
     size <- function(x)
     {
-        if (x >= 1024^4)
-            sprintf("%.1fT", x / 1024^4)
-        else if (x >= 1024^3)
-            sprintf("%.1fG", x / 1024^3)
-        else if (x >= 1024^2)
-            sprintf("%.1fM", x / 1024^2)
-        else if (x >= 1024)
-            sprintf("%.1fK", x / 1024)
+        if (x >= 1024^4L)
+            sprintf("%.1fT", x / 1024^4L)
+        else if (x >= 1024^3L)
+            sprintf("%.1fG", x / 1024^3L)
+        else if (x >= 1024^2L)
+            sprintf("%.1fM", x / 1024^2L)
+        else if (x >= 1024L)
+            sprintf("%.1fK", x / 1024L)
         else
             sprintf("%gB", x)
     }
@@ -344,12 +368,21 @@ process_count <- 1L
 
 
 #######################################################################
+# Compression and decompression in memory
+
+.compress <- function(m) memCompress(m, type="gzip")
+
+.decompress <- function(m) memDecompress(m, type="gzip")
+
+
+
+#######################################################################
 # Parallel functions
 
 # need parallel? how many? return 1 if no parallel
 .NumParallel <- function(cl, nm="parallel")
 {
-    if (is.null(cl) | identical(cl, FALSE))
+    if (is.null(cl) | isFALSE(cl))
     {
         ans <- 1L
     } else if (is.numeric(cl))
@@ -358,23 +391,12 @@ process_count <- 1L
             stop("'parallel' should be length-one.")
         if (is.na(cl)) cl <- 1L
         if (cl < 1L) cl <- 1L
-        mc <- getOption("seqarray.multicore")
-        if (inherits(mc, "cluster"))
-        {
-            if (cl > length(mc)) cl <-  length(mc)
-        }
         ans <- as.integer(cl)
     } else if (isTRUE(cl))
     {
-        mc <- getOption("seqarray.multicore")
-        if (inherits(mc, "cluster"))
-        {
-            ans <- length(mc)
-        } else {
-            ans <- detectCores() - 1L
-            if (is.na(ans)) ans <- 2L
-            if (ans <= 1L) ans <- 2L
-        }
+        ans <- detectCores() - 1L
+        if (is.na(ans)) ans <- 2L
+        if (ans <= 1L) ans <- 2L
     } else if (inherits(cl, "cluster"))
     {
         ans <- length(cl)
@@ -387,15 +409,32 @@ process_count <- 1L
         stop("Invalid '", nm, "'.")
     if (ans > 128L)  # limited by R itself
         stop("It is unable to allocate resources for more than 128 nodes.")
+    # output
+    stopifnot(ans >= 1L)  # check
     ans
 }
 
 # check if the multicore cluster is specified
 .McoreParallel <- function(parallel)
 {
-    if (is.numeric(parallel) || isTRUE(parallel))
+    # check
+    msg <- "'parallel' should be a positive integer, TRUE/FALSE or a cluster."
+    if (is.numeric(parallel))
     {
-        mc <- getOption("seqarray.multicore")
+        if (length(parallel) != 1L) stop(msg)
+        if (!is.finite(parallel) || parallel<1L) stop(msg)
+    }
+    if (is.logical(parallel))
+    {
+        if (length(parallel) != 1L) stop(msg)
+        if (is.na(parallel)) stop(msg)
+    }
+    # replace?
+    if (is.double(parallel))
+        parallel <- as.integer(parallel)
+    if (isTRUE(parallel) || (is.numeric(parallel) && parallel>1L))
+    {
+        mc <- .PkgEnv$seqarray.multicore
         if (inherits(mc, "cluster"))
         {
             if (isTRUE(parallel) || (parallel >= length(mc)))
@@ -412,6 +451,7 @@ process_count <- 1L
             }
         }
     }
+    # output
     parallel
 }
 
@@ -520,7 +560,7 @@ process_count <- 1L
                     if (!is.null(dv)) ans[[d$tag]] <- dv
                 }
 
-                if (!is.null(.updatefun)) .updatefun(i)
+                if (is.function(.updatefun)) .updatefun(i)
             }
         }
     } else {
@@ -615,7 +655,8 @@ process_count <- 1L
         ans <- NULL
 
     jobs <- lapply(seq_len(min(.num, ncore)), function(i)
-        parallel::mcparallel(.fun(i, ...), name=NULL, mc.set.seed=TRUE, silent=FALSE))
+        parallel::mcparallel(.fun(i, i, ...), name=NULL, mc.set.seed=TRUE,
+            silent=FALSE))
     jobsp <- .mc_processID(jobs)
     jobid <- seq_along(jobsp)
     has.errors <- 0L
@@ -659,7 +700,7 @@ process_count <- 1L
                         # assignment NULL would remove it from the list
                         if (!is.null(child.res)) ans[[ci]] <- child.res
                     }
-                    if (!is.null(.updatefun)) .updatefun(ci)
+                    if (is.function(.updatefun)) .updatefun(ci)
                 } else {
                     # the job has finished
                     finish[ci] <- TRUE
@@ -668,7 +709,7 @@ process_count <- 1L
                     if (nexti <= .num)
                     {
                         jobid[ji] <- nexti
-                        jobs[[ji]] <- parallel::mcparallel(.fun(nexti, ...),
+                        jobs[[ji]] <- parallel::mcparallel(.fun(ji, nexti, ...),
                             name=NULL, mc.set.seed=TRUE, silent=FALSE)
                         jobsp[ji] <- .mc_processID(jobs[[ji]])
                         nexti <- nexti + 1L
@@ -907,7 +948,8 @@ process_count <- 1L
     {
         if (flag) cat("    genotype")
         .DigestCode(n, digest, verbose)
-        .DigestCode(index.gdsn(gfile, "genotype/@data", silent=TRUE), digest, FALSE)
+        .DigestCode(index.gdsn(gfile, "genotype/@data", silent=TRUE),
+            digest, FALSE)
     }
 
     n <- index.gdsn(gfile, "phase/data", silent=TRUE)
@@ -938,7 +980,8 @@ process_count <- 1L
     for (n in ls.gdsn(node))
     {
         if (flag) cat("    annotation/format/", n, sep="")
-        .DigestCode(index.gdsn(node, paste0(n, "/data"), silent=TRUE), digest, verbose)
+        .DigestCode(index.gdsn(node, paste0(n, "/data"), silent=TRUE),
+            digest, verbose)
         .DigestCode(index.gdsn(node, paste0(n, "/@data")), digest, FALSE)
     }
 
@@ -965,7 +1008,7 @@ process_count <- 1L
 #######################################################################
 # Convert to a VariantAnnotation object
 
-.seqProgress <- function(count, nproc)
+.seqProgress <- function(count, nproc=1L)
     .Call(SEQ_Progress, count, nproc)
 
 .seqProgForward <- function(progress, inc)

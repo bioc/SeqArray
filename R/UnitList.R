@@ -10,7 +10,7 @@
 # Filter out the unit variants according to MAF, MAC and missing rates
 #
 seqUnitFilterCond <- function(gdsfile, units, maf=NaN, mac=1L, missing.rate=NaN,
-    minsize=1L, parallel=seqGetParallel(), verbose=TRUE)
+    minsize=1L, parallel=seqGetParallel(), balancing=NA, verbose=TRUE)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
@@ -19,7 +19,10 @@ seqUnitFilterCond <- function(gdsfile, units, maf=NaN, mac=1L, missing.rate=NaN,
     stopifnot(is.numeric(mac), length(mac) %in% 1:2)
     stopifnot(is.numeric(missing.rate), length(missing.rate)==1L)
     stopifnot(is.numeric(minsize), length(minsize)==1L, minsize>=0L)
+    stopifnot(is.logical(balancing), length(balancing)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
+    if (is.na(balancing))
+        balancing <- isTRUE(getOption("seqarray.balancing", TRUE))
 
     # save state
     seqSetFilter(gdsfile, variant.sel=unlist(units$index), action="push+set",
@@ -35,8 +38,10 @@ seqUnitFilterCond <- function(gdsfile, units, maf=NaN, mac=1L, missing.rate=NaN,
     # calculate # of ref. allele and missing genotype
     if (verbose)
         cat("Calculating MAF, MAC and missing rates ...\n")
-    # get MAF/MAC/missing rate
-    v <- .Get_MAF_MAC_Missing(gdsfile, parallel, verbose)
+    # get MAF, MAC, missing rate
+    v <- seqGetAF_AC_Missing(gdsfile, minor=TRUE, parallel=parallel,
+        balancing=balancing, verbose=verbose)
+    names(v) <- c("maf", "mac", "miss")
     # show maf, mac and missing rate
     if (verbose)
     {
@@ -272,57 +277,56 @@ seqUnitApply <- function(gdsfile, units, var.name, FUN,
 
     # initialize internally
     .clear_varmap(gdsfile)
-    .Call(SEQ_IntAssign, process_index, 1L)
-    .Call(SEQ_IntAssign, process_count, 1L)
+    .init_proc()
 
     # get the number of workers
-    njobs <- .NumParallel(parallel)
     parallel <- .McoreParallel(parallel)
+    njobs <- .NumParallel(parallel)
     if (njobs == 1L)
     {
         # save state
-        seqSetFilter(gdsfile, action="push", verbose=FALSE)
-        on.exit({ seqSetFilter(gdsfile, action="pop", verbose=FALSE) })
-        # progress information
-        nl <- length(units$index)
-        progress <- if (.progress) .seqProgress(nl, njobs) else NULL
+        seqFilterPush(gdsfile)
+        on.exit(seqFilterPop(gdsfile))
+        # progress info
+        n <- length(units$index)
+        progress <- if (.progress) .seqProgress(n) else NULL
         # for-loop
-        ans <- vector("list", nl)
-        for (i in seq_len(nl))
+        ans <- vector("list", n)
+        for (i in 1:n)
         {
             seqSetFilter(gdsfile, variant.sel=units$index[[i]], verbose=FALSE)
             x <- seqGetData(gdsfile, var.name, .useraw, .padNA, .tolist, .envir)
             v <- FUN(x, ...)
             if (!is.null(v)) ans[[i]] <- v
-            .seqProgForward(progress, 1L)
+            if (!is.null(progress)) .seqProgForward(progress, 1L)
         }
-        # finalize
+        # release progress info bar
         remove(progress)
 
     } else {
+        # multiple cores
 
         # parameters for load balancing
-        nl <- length(units$index)
+        n <- length(units$index)
         .bl_size <- as.integer(.bl_size)
-        if (.bl_size * njobs > nl)
+        if (is.na(.bl_size) || (.bl_size * njobs > n))
         {
-            .bl_size <- nl %/% njobs
+            .bl_size <- n %/% njobs
             if (.bl_size <= 0L) .bl_size <- 1L
         }
-        totnum <- nl %/% .bl_size
-        if (nl %% .bl_size) totnum <- totnum + 1L
+        ntot <- as.integer(ceiling(n / .bl_size))
 
         # multiple processes
         if (.IsForking(parallel))
         {
             # forking
-            .packageEnv$gdsfile <- gdsfile
-            .packageEnv$units <- units$index
-            .packageEnv$var.name <- var.name
-            .packageEnv$envir <- .envir
+            .PkgEnv$gdsfile <- gdsfile
+            .PkgEnv$units <- units$index
+            .PkgEnv$var.name <- var.name
+            .PkgEnv$envir <- .envir
             parallel <- parallel::makeForkCluster(njobs)
             on.exit({
-                with(.packageEnv, gdsfile <- units <- var.name <- envir <- NULL)
+                with(.PkgEnv, gdsfile <- units <- var.name <- envir <- NULL)
                 stopCluster(parallel)
             })
         } else {
@@ -333,63 +337,65 @@ seqUnitApply <- function(gdsfile, units, var.name, FUN,
                 parallel <- makeCluster(njobs)
             }
             # distribute the parameters to each node
-            clusterCall(parallel, function(fn, ut, vn, ss, env) {
+            clusterCall(parallel, function(fn, ut, vn, ss, env)
+            {
                 f <- SeqArray::seqOpen(fn, allow.duplicate=TRUE)
-                .packageEnv$gdsfile <- f
+                .PkgEnv$gdsfile <- f
+                ss <- .decompress(ss)
                 SeqArray::seqSetFilter(f, sample.sel=ss, verbose=FALSE)
-                .packageEnv$units <- ut
-                .packageEnv$var.name <- vn
-                .packageEnv$envir <- env
+                .PkgEnv$units <- ut
+                .PkgEnv$var.name <- vn
+                .PkgEnv$envir <- env
                 invisible()
             }, fn=gdsfile$filename, ut=units$index, vn=var.name,
-                ss=.Call(SEQ_GetSpaceSample, gdsfile), env=.envir)
+                ss=.compress(.Call(SEQ_GetSpaceSample, gdsfile)),
+                env=.envir)
             # finalize
             on.exit({
                 clusterCall(parallel, function() {
-                    SeqArray::seqClose(.packageEnv$gdsfile)
-                    with(.packageEnv, gdsfile <- units <- var.name <- envir <- NULL)
+                    SeqArray::seqClose(.PkgEnv$gdsfile)
+                    with(.PkgEnv, gdsfile <- units <- var.name <- envir <- NULL)
                 })
             })
             if (need_cluster)
                 on.exit(stopCluster(parallel), add=TRUE)
         }
         # initialize internally
-        clusterApply(parallel, 1:njobs, function(i, njobs) {
-            .Call(SEQ_IntAssign, process_index, i)
-            .Call(SEQ_IntAssign, process_count, njobs)
-        }, njobs=njobs)
+        clusterApply(parallel, 1:njobs,
+            function(i, njobs) .init_proc(i, njobs), njobs=njobs)
 
         # progress information
-        progress <- if (.progress) .seqProgress(length(units$index), njobs) else NULL
+        progress <- if (.progress) .seqProgress(n) else NULL
+        updatefun <- if (.progress)
+            function(i) .seqProgForward(progress, .bl_size) else NULL
         # distributed for-loop
-        ans <- .DynamicClusterCall(parallel, totnum,
+        ans <- .DynamicClusterCall(parallel, ntot,
             .fun = function(i, FUN, .useraw, .bl_size, ...)
         {
             # chuck size
-            n <- .bl_size
-            k <- (i - 1L) * n
-            if (k + n > length(.packageEnv$units))
-                n <- length(.packageEnv$units) - k
+            b <- .bl_size
+            k <- (i - 1L) * b
+            if (k + b > length(.PkgEnv$units))
+                b <- length(.PkgEnv$units) - k
             # temporary
-            f <- .packageEnv$gdsfile
-            vn <- .packageEnv$var.name
-            env <- .packageEnv$envir
-            rv <- vector("list", n)
+            f <- .PkgEnv$gdsfile
+            vn <- .PkgEnv$var.name
+            env <- .PkgEnv$envir
+            rv <- vector("list", b)
             # set variant filter for each sub unit
-            for (j in seq_len(n))
+            for (j in seq_len(b))
             {
-                seqSetFilter(f, variant.sel=.packageEnv$units[[j+k]], verbose=FALSE)
+                seqSetFilter(f, variant.sel=.PkgEnv$units[[j+k]], verbose=FALSE)
                 x <- seqGetData(f, vn, .useraw, .padNA, .tolist, env)
                 v <- FUN(x, ...)
                 if (!is.null(v)) rv[[j]] <- v
             }
             # return
             rv
-        }, .combinefun="list",
-            .updatefun=function(i) .seqProgForward(progress, .bl_size),
+        }, .combinefun="list", .updatefun=updatefun,
             FUN=FUN, .useraw=.useraw, .bl_size=.bl_size, ...)
         ans <- unlist(ans, recursive=FALSE)
-        # finalize
+        # release progress info bar
         remove(progress)
     }
 

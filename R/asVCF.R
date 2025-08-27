@@ -43,6 +43,6 @@ seqAsVCF <- function(x, chr.prefix="", info=NULL, geno=NULL)
                                   info=SeqArray::info(x, info=info),
                                   geno=SeqArray::geno(x, geno=geno))
     if (chr.prefix != "")
-        seqlevels(vcf) <- paste0(chr.prefix, seqlevels(vcf))
+        vcf <- renameSeqlevels(vcf, paste0(chr.prefix, seqlevels(vcf)))
     vcf
 }

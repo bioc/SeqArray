@@ -599,11 +599,11 @@ public:
 class COREARRAY_DLL_LOCAL CProgress
 {
 public:
-	CProgress(C_Int64 start, C_Int64 count, SEXP conn, bool newline);
-	virtual ~CProgress();
+	CProgress(C_Int64 count, SEXP Rconn, bool verbose);
+	~CProgress();
 
 	void Forward(C_Int64 Inc=1);
-	virtual void ShowProgress();
+	void ShowProgress();
 
 	inline C_Int64 Counter() const { return vCounter; }
 	inline C_Int64 TotalCount() const { return vTotalCount; }
@@ -611,25 +611,14 @@ public:
 protected:
 	C_Int64 vTotalCount;  ///< the total number
 	C_Int64 vCounter;     ///< the current counter
-	Rconnection File;     ///< R connection
+	Rconnection OutFile;  ///< R connection output
+	bool Verbose;         ///< whether display on stdout via Rprintf()
 	C_Int64 FwdCnt;       ///< the number of calling Forward()
 	time_t _start_time;   ///< the starting time
-	bool NewLine;
+	time_t _last_time;    ///< last saved time for calculating the interval
 	double _start, _step;
 	C_Int64 _hit;
 	vector< pair<double, time_t> > _timer;
-};
-
-class COREARRAY_DLL_LOCAL CProgressStdOut: public CProgress
-{
-public:
-	CProgressStdOut(C_Int64 count, int nproc, bool verbose);
-	virtual void ShowProgress();
-
-protected:
-	time_t _last_time;
-	int NProcess;
-	bool Verbose;
 };
 
 
@@ -645,8 +634,16 @@ extern SEXP R_Data_Name;
 extern SEXP R_Data_Dim2_Name;
 extern SEXP R_Data_ListClass;
 
-extern int* R_Process_Count;
+// the index of child process
 extern int* R_Process_Index;
+// the number of child processes
+extern int* R_Process_Count;
+// list of file names for child processes
+extern vector<string> R_Process_StatusFName;
+// the index of block being used currently
+extern int R_Block_Index;
+// the number of blocks, 0 when it is not used
+extern int R_Block_Count;
 
 
 // ===========================================================
@@ -702,6 +699,9 @@ COREARRAY_DLL_LOCAL string GDS_PATH_PREFIX(const string &path, char prefix);
 
 /// output to a connection
 COREARRAY_DLL_LOCAL void ConnPutText(Rconnection file, const char *fmt, ...);
+
+/// time interval to string
+COREARRAY_DLL_LOCAL const char *time_str(double s);
 
 
 
