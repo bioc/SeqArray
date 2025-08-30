@@ -9,8 +9,9 @@
 seqParallel(cl=seqGetParallel(), gdsfile, FUN,
     split=c("by.variant", "by.sample", "none"), .combine="unlist",
     .selection.flag=FALSE, .initialize=NULL, .finalize=NULL, .initparam=NULL,
-    .balancing=FALSE, .bl_size=10000L, .bl_progress=FALSE, ...)
-seqParApply(cl=seqGetParallel(), x, FUN, load.balancing=TRUE, ...)
+    .balancing=FALSE, .bl_size=NA_integer_, .bl_progress=FALSE,
+    .status_file=FALSE, .proc_time=FALSE, ...)
+seqParApply(cl=seqGetParallel(), x, FUN, .balancing=TRUE, ...)
 }
 \arguments{
     \item{cl}{\code{NULL} or \code{FALSE}: serial processing; \code{TRUE}:
@@ -40,14 +41,21 @@ seqParApply(cl=seqGetParallel(), x, FUN, load.balancing=TRUE, ...)
         two arguments (process_id, param)}
     \item{.initparam}{parameters passed to \code{.initialize} and
         \code{.initialize}}
-    \item{.balancing}{load balancing if \code{TRUE}}
-    \item{.bl_size}{chuck size, the increment for load balancing, 10000 for
-        variants; only applicable if \code{.balancing=TRUE}}
+    \item{.balancing}{whether to perform workload balancing or not, only
+        applicable when multiple cores are used; if \code{NA}, use \code{TRUE}
+        as a default until \code{getOption("seqarray.balancing")} is set and
+        not \code{TRUE}}
+    \item{.bl_size}{chuck size (# of variants or samples), the increment for
+        load balancing, only applicable if \code{.balancing=TRUE}; if
+        \code{NA_integer_}, automatically determined by the number of cores}
     \item{.bl_progress}{if \code{TRUE} and \code{.balancing=TRUE}, show progress
         information}
+    \item{.status_file}{if \code{TRUE}, create empty files for saving the
+        status of child processes, which can be used in the user-defined
+        function}
+    \item{.proc_time}{if \code{TRUE}, show the elapsed time calling the
+        function}
     \item{x}{a vector (atomic or list), passed to \code{FUN}}
-    \item{load.balancing}{if \code{TRUE}, call \code{\link{clusterApplyLB}}
-        instead of \code{\link{clusterApply}}}
     \item{...}{optional arguments to \code{FUN}}
 }
 \details{

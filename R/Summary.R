@@ -662,6 +662,8 @@ seqSummary <- function(gdsfile, varname=NULL,
     if (is.character(gdsfile))
     {
         stopifnot(length(gdsfile) == 1L)
+        if (isTRUE(verbose))
+            .cat("Open ", sQuote(basename(gdsfile)))
         gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
         on.exit(seqClose(gdsfile))   
     }
@@ -772,28 +774,52 @@ seqSummary <- function(gdsfile, varname=NULL,
 
 
 #######################################################################
-# summarize
+# Digest to generate hash code
 #
-seqDigest <- function(gdsfile, varname, algo=c("md5"), verbose=FALSE)
+seqDigest <- function(gdsfile, varname, algo=c("md5"), parallel=FALSE,
+    verbose=FALSE)
 {
     # check
-    stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+    if (is.character(gdsfile))
+    {
+        stopifnot(length(gdsfile) == 1L)
+        if (isTRUE(verbose))
+            .cat("Open ", sQuote(basename(gdsfile)))
+        gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
+        on.exit(seqClose(gdsfile))
+    } else {
+        stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+    }
     stopifnot(is.character(varname), length(varname)==1L)
     algo <- match.arg(algo)
+    parallel <- .McoreParallel(parallel)
+    njobs <- .NumParallel(parallel)
 
     if (requireNamespace("digest", quietly=TRUE))
     {
-        .cfunction("FC_DigestInit")(algo)
-        seqApply(gdsfile, varname, FUN=.cfunction("FC_DigestScan"),
-            margin="by.variant", as.is="none", .useraw=NA, .progress=verbose)
-        .cfunction("FC_DigestDone")(algo)
+        ans <- seqParallel(parallel, gdsfile, split="by.variant",
+            FUN = function(f, varname, algo, verbose)
+            {
+                # initialize
+                .cfunction("FC_DigestInit")(algo)
+                # scan
+                seqApply(gdsfile, varname, FUN=.cfunction("FC_DigestScan"),
+                    margin="by.variant", as.is="none", .useraw=NA,
+                    .progress=verbose && (process_index==1L))
+                # return a string
+                .cfunction("FC_DigestDone")(algo)
+            },
+            varname=varname, algo=algo, verbose=verbose)
+        # output
+        if (njobs > 1L) ans <- digest(ans, algo=algo)
+        ans
     } else
         stop("The digest package is not installed.")
 }
 
 
 #######################################################################
-# summarize
+# Get system information
 #
 seqSystem <- function()
 {
@@ -901,11 +927,11 @@ seqCheck <- function(gdsfile, verbose=TRUE)
 {
     stopifnot(inherits(gdsfile, "SeqVarGDSClass") | is.character(gdsfile))
     stopifnot(is.logical(verbose), length(verbose)==1L)
-
-    if (is.character(gdsfile) && length(gdsfile)==1L)
+    if (is.character(gdsfile))
     {
-        if (verbose)
-            cat("Open '", gdsfile, "'\n", sep="")
+        stopifnot(length(gdsfile) == 1L)
+        if (isTRUE(verbose))
+            .cat("Open ", sQuote(basename(gdsfile)))
         gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
         on.exit({ seqClose(gdsfile) })
     }

@@ -20,8 +20,6 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
 {
     # check
     stopifnot(is.character(gdsfile) | inherits(gdsfile, "SeqVarGDSClass"))
-    if (is.character(gdsfile))
-        stopifnot(length(gdsfile)==1L)
     if (!inherits(vcf.fn, "connection"))
         stopifnot(is.character(vcf.fn), length(vcf.fn)==1L)
     stopifnot(is.null(info.var) | is.character(info.var))
@@ -32,6 +30,9 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
 
     if (is.character(gdsfile))
     {
+        stopifnot(length(gdsfile)==1L)
+        if (isTRUE(verbose))
+            .cat("Open ", sQuote(basename(gdsfile)))
         gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
         on.exit(seqClose(gdsfile))
     }
@@ -375,10 +376,11 @@ seqGDS2SNP <- function(gdsfile, out.gdsfn, dosage=FALSE,
     stopifnot(is.logical(optimize), length(optimize)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
     ds.type <- match.arg(ds.type)
+    show_timeheader <- !isTRUE(attr(verbose, "header_no_time"))
 
     if (verbose)
     {
-        cat(date(), "\n", sep="")
+        if (show_timeheader) .cat("##< ", .tm())
         if (isTRUE(dosage) | is.character(dosage))
             cat("SeqArray GDS to SNP GDS dosage format:\n")
         else
@@ -388,6 +390,9 @@ seqGDS2SNP <- function(gdsfile, out.gdsfn, dosage=FALSE,
     # if it is a file name
     if (is.character(gdsfile))
     {
+        stopifnot(length(gdsfile)==1L)
+        if (verbose)
+            .cat("    open ", sQuote(basename(gdsfile)))
         gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
         on.exit({ seqClose(gdsfile) })
     }
@@ -466,8 +471,8 @@ seqGDS2SNP <- function(gdsfile, out.gdsfn, dosage=FALSE,
         gGeno <- add.gdsn(gfile, "genotype", storage="bit2",
             valdim=c(length(sampid), 0L), compress=compress.geno)
         put.attr.gdsn(gGeno, "sample.order")
-        seqApply(gdsfile, "$dosage", as.is=gGeno, .useraw=TRUE, .progress=verbose,
-            FUN = .cfunction("FC_GDS2SNP"))
+        seqApply(gdsfile, "$dosage", as.is=gGeno, .useraw=TRUE,
+            .progress=verbose, FUN = .cfunction("FC_GDS2SNP"))
     } else {
         .cfunction("FC_SetNumSamp")(length(sampid))
         gGeno <- add.gdsn(gfile, "genotype", storage=ds.type,
@@ -481,14 +486,16 @@ seqGDS2SNP <- function(gdsfile, out.gdsfn, dosage=FALSE,
     closefn.gds(gfile)
     gfile <- NULL
     if (verbose)
-        cat("Done.\n", date(), "\n", sep="")
+        if (optimize) .cat("Done.  # ", .tm()) else cat("Done.\n")
 
+    # optimize access efficiency
     if (optimize)
     {
-        if (verbose) cat("Optimize the access efficiency ...\n")
+        if (verbose)
+            cat("Optimize the access efficiency ...\n")
         cleanup.gds(out.gdsfn, verbose=verbose)
-        if (verbose) cat(date(), "\n", sep="")
     }
+    if (verbose && show_timeheader) .cat("##> ", .tm())
 
     # output
     invisible(normalizePath(out.gdsfn))
@@ -512,6 +519,7 @@ seqSNP2GDS <- function(gds.fn, out.fn, storage.option="LZMA_RA", major.ref=TRUE,
     stopifnot(is.logical(optimize), length(optimize)==1L)
     stopifnot(is.logical(digest) | is.character(digest), length(digest)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
+    show_timeheader <- !isTRUE(attr(verbose, "header_no_time"))
 
     if (is.character(storage.option))
         storage.option <- seqStorageOption(storage.option)
@@ -519,11 +527,13 @@ seqSNP2GDS <- function(gds.fn, out.fn, storage.option="LZMA_RA", major.ref=TRUE,
 
     if (verbose)
     {
-        cat(date(), "\n", sep="")
+        if (show_timeheader) .cat("##< ", .tm())
         cat("SNP GDS to SeqArray GDS Format:\n")
     }
 
     # open the SNP GDS
+    if (verbose)
+        .cat("    open ", sQuote(basename(gds.fn)))
     srcfile <- openfn.gds(gds.fn)
     on.exit({ closefn.gds(srcfile) })
 
@@ -577,17 +587,17 @@ seqSNP2GDS <- function(gds.fn, out.fn, storage.option="LZMA_RA", major.ref=TRUE,
     n <- .AddVar(storage.option, dstfile, "variant.id", s, closezip=TRUE)
     .DigestCode(n, digest, verbose)
 
-    # add position
-    if (verbose) cat("    position")
-    s <- read.gdsn(index.gdsn(srcfile, "snp.position"))
-    n <- .AddVar(storage.option, dstfile, "position", s, closezip=TRUE)
-    .DigestCode(n, digest, verbose)
-
     # add chromosome
     if (verbose) cat("    chromosome")
     s <- read.gdsn(index.gdsn(srcfile, "snp.chromosome"))
     s <- as.character(s)
     n <- .AddVar(storage.option, dstfile, "chromosome", s, closezip=TRUE)
+    .DigestCode(n, digest, verbose)
+
+    # add position
+    if (verbose) cat("    position")
+    s <- read.gdsn(index.gdsn(srcfile, "snp.position"))
+    n <- .AddVar(storage.option, dstfile, "position", s, closezip=TRUE)
     .DigestCode(n, digest, verbose)
 
     # add allele
@@ -754,17 +764,15 @@ seqSNP2GDS <- function(gds.fn, out.fn, storage.option="LZMA_RA", major.ref=TRUE,
     # optimize access efficiency
 
     if (verbose)
-    {
-        cat("Done.\n")
-        cat(date(), "\n", sep="")
-    }
+        if (optimize) .cat("Done.  # ", .tm()) else cat("Done.\n")
+    # optimize access efficiency
     if (optimize)
     {
         if (verbose)
             cat("Optimize the access efficiency ...\n")
         cleanup.gds(out.fn, verbose=verbose)
-        if (verbose) cat(date(), "\n", sep="")
     }
+    if (verbose && show_timeheader) .cat("##> ", .tm())
 
     # output
     invisible(normalizePath(out.fn))
@@ -816,12 +824,14 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     }
     stopifnot(is.logical(digest) | is.character(digest), length(digest)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
-    pnum <- .NumParallel(parallel)
+    show_timeheader <- !isTRUE(attr(verbose, "header_no_time"))
+
     parallel <- .McoreParallel(parallel)
+    pnum <- .NumParallel(parallel)
 
     if (verbose)
     {
-        cat(date(), "\n", sep="")
+        if (show_timeheader) .cat("##< ", .tm())
         cat("PLINK BED to SeqArray GDS:\n")
     }
 
@@ -927,12 +937,6 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
         compress=compress.annotation, closezip=TRUE)
     .DigestCode(n, digest, verbose, FALSE)
 
-    # add position
-    if (verbose) cat("    position  ")
-    n <- add.gdsn(dstfile, "position", bimD$pos, storage="int32",
-        compress=compress.annotation, closezip=TRUE)
-    .DigestCode(n, digest, verbose, FALSE)
-
     # add chromosome
     if (verbose) cat("    chromosome  ")
     n <- add.gdsn(dstfile, "chromosome", bimD$chr, storage="string",
@@ -940,6 +944,12 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     .DigestCode(n, digest, verbose, FALSE)
     # RLE-coded chromosome
     .optim_chrom(dstfile)
+
+    # add position
+    if (verbose) cat("    position  ")
+    n <- add.gdsn(dstfile, "position", bimD$pos, storage="int32",
+        compress=compress.annotation, closezip=TRUE)
+    .DigestCode(n, digest, verbose, FALSE)
 
     # add allele
     if (verbose) cat("    allele  ")
@@ -990,8 +1000,8 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
             flush.console()
         }
         # working flags
-        .packageEnv$work_idx <- 1L
-        .packageEnv$work_flag <- rep(FALSE, pnum)
+        .PkgEnv$work_idx <- 1L
+        .PkgEnv$work_flag <- rep(FALSE, pnum)
 
         # conversion in parallel
         seqParallel(parallel, NULL, FUN = function(bed.fn, tmp.fn, num4, psplit, cp)
@@ -1005,7 +1015,7 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
             f <- createfn.gds(tmp.fn[i])
             on.exit({ closefn.gds(f) }, add=TRUE)
             # progress file
-            progfile <- file(paste0(tmp.fn[i], ".progress"), "wt")
+            progfile <- file(paste0(tmp.fn[i], ".progress.txt"), "wt")
             cat(tmp.fn[i], ":\n", file=progfile, sep="")
             on.exit({ close(progfile) }, add=TRUE)
             # new a gds node
@@ -1043,13 +1053,13 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
             .combine = function(fn_idx)
             {
                 # set TRUE to indicate the file completed
-                .packageEnv$work_flag[fn_idx] <- TRUE
+                .PkgEnv$work_flag[fn_idx] <- TRUE
                 if (verbose && fn_idx==1L)
                     cat("    >>> merging the files: <<<\n")
                 # check whether merging the file or not
-                if (.packageEnv$work_idx == fn_idx)
+                if (.PkgEnv$work_idx == fn_idx)
                 {
-                    while (isTRUE(.packageEnv$work_flag[fn_idx]))
+                    while (isTRUE(.PkgEnv$work_flag[fn_idx]))
                     {
                         if (verbose)
                             cat("       ", basename(ptmpfn[fn_idx]))
@@ -1062,14 +1072,14 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
                         if (verbose) cat("\t[Done]\n")
                         fn_idx <- fn_idx + 1L
                     }
-                    .packageEnv$work_idx <- fn_idx
+                    .PkgEnv$work_idx <- fn_idx
                 }
             })
 
         # delete temporary files
-        unlink(c(ptmpfn, paste0(ptmpfn, ".progress")), force=TRUE)
-        .packageEnv$work_idx <- NULL
-        .packageEnv$work_flag <- NULL
+        unlink(c(ptmpfn, paste0(ptmpfn, ".progress.txt")), force=TRUE)
+        .PkgEnv$work_idx <- NULL
+        .PkgEnv$work_flag <- NULL
         if (verbose && !isFALSE(digest)) cat("    ")
     }
 
@@ -1124,7 +1134,8 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
             f <- createfn.gds(tmp.fn[i])
             on.exit(closefn.gds(f))
             # new a gds node
-            vg <- add.gdsn(f, "data", storage="bit1", valdim=c(nsamp, 0L), compress=cp)
+            vg <- add.gdsn(f, "data", storage="bit1", valdim=c(nsamp, 0L),
+                compress=cp)
             # re-position the file
             cnt <- psplit[[2L]][i]
             if (cnt > 0L)
@@ -1235,7 +1246,7 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
     # optimize access efficiency
 
     if (verbose)
-        cat("Done.\n", date(), "\n", sep="")
+        if (optimize) .cat("Done.  # ", .tm()) else cat("Done.\n")
     on.exit()
     closefn.gds(dstfile)
     if (optimize)
@@ -1243,8 +1254,8 @@ seqBED2GDS <- function(bed.fn, fam.fn, bim.fn, out.gdsfn,
         if (verbose)
             cat("Optimize the access efficiency ...\n")
         cleanup.gds(out.gdsfn, verbose=verbose)
-        if (verbose) cat(date(), "\n", sep="")
     }
+    if (verbose && show_timeheader) .cat("##> ", .tm())
 
     # output
     invisible(normalizePath(out.gdsfn))
@@ -1265,19 +1276,22 @@ seqGDS2BED <- function(gdsfile, out.fn,
     stopifnot(is.character(out.fn), length(out.fn)==1L, !is.na(out.fn))
     stopifnot(is.logical(multi.row), length(multi.row)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
+    show_timeheader <- !isTRUE(attr(verbose, "header_no_time"))
+
     write.rsid <- match.arg(write.rsid)
     if (multi.row)
         stop("'multi.row=TRUE' is reserved for future implementation.")
 
     if (verbose)
     {
-        .cat(date())
+        if (show_timeheader) .cat("##< ", .tm())
         .cat("SeqArray GDS to PLINK BED:")
     }
     if (is.character(gdsfile))
     {
+        stopifnot(length(gdsfile)==1L)
         if (verbose)
-            .cat("    open ", sQuote(gdsfile))
+            .cat("    open ", sQuote(basename(gdsfile)))
         gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
         on.exit(seqClose(gdsfile))
     }
@@ -1286,6 +1300,7 @@ seqGDS2BED <- function(gdsfile, out.fn,
         dm <- .seldim(gdsfile)
         .cat("    # of samples: ", .pretty(dm[2L]))
         .cat("    # of variants: ", .pretty(dm[3L]))
+        .cat("    [Output]")
     }
 
     # fam file
@@ -1301,7 +1316,7 @@ seqGDS2BED <- function(gdsfile, out.fn,
         fam$pheno <- seqGetData(gdsfile, nm)
     famfn <- paste0(out.fn, ".fam")
     if (verbose)
-        .cat("    fam file: ", sQuote(famfn))
+        .cat("    FAM: ", famfn)
     write.table(fam, file=famfn, quote=FALSE, sep="\t", row.names=FALSE,
         col.names=FALSE)
     remove(fam)
@@ -1339,7 +1354,7 @@ seqGDS2BED <- function(gdsfile, out.fn,
         stringsAsFactors=FALSE)
     bimfn <- paste0(out.fn, ".bim")
     if (verbose)
-        .cat("    bim file: ", sQuote(bimfn))
+        .cat("    BIM: ", bimfn)
     write.table(bim, file=bimfn, quote=FALSE, sep="\t", row.names=FALSE,
         col.names=FALSE)
     remove(bim)
@@ -1347,7 +1362,10 @@ seqGDS2BED <- function(gdsfile, out.fn,
     # bed file
     bedfn <- paste0(out.fn, ".bed")
     if (verbose)
-        .cat("    bed file: ", sQuote(bedfn))
+    {
+        sz <- ceiling(dm[2L] / 4) * dm[3L] + 3L
+        .cat("    BED: ", bedfn, " (", .pretty_size(sz), ")")
+    }
     outf <- file(bedfn, "w+b")
     on.exit(close(outf), add=TRUE)
     writeBin(as.raw(c(0x6C, 0x1B, 0x01)), outf)
@@ -1372,7 +1390,7 @@ seqGDS2BED <- function(gdsfile, out.fn,
     seqApply(gdsfile, nm, .cfunction("FC_GDS2BED"), as.is=outf,
         .useraw=TRUE, .progress=verbose)
 
-    if (verbose) .cat("Done.\n", date())
+    if (verbose && show_timeheader) .cat("Done.\n##> ", .tm())
 
     # output
     invisible(normalizePath(c(famfn, bimfn, bedfn)))
@@ -1408,8 +1426,8 @@ seqEmptyFile <- function(outfn, sample.id=character(), numvariant=1L,
 
     # add basic site information
     add.gdsn(f, "variant.id", seq_len(numvariant))
-    add.gdsn(f, "position", integer(numvariant))
     add.gdsn(f, "chromosome", character(numvariant))
+    add.gdsn(f, "position", integer(numvariant))
     add.gdsn(f, "allele", character(numvariant))
 
     # add folders

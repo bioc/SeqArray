@@ -596,9 +596,11 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     stopifnot(is.logical(digest) | is.character(digest), length(digest)==1L)
     stopifnot(is.logical(use_Rsamtools), length(use_Rsamtools)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
+    show_timeheader <- !isTRUE(attr(verbose, "header_no_time"))
 
-    pnum <- .NumParallel(parallel)
     parallel <- .McoreParallel(parallel)
+    pnum <- .NumParallel(parallel)
+
     if (inherits(vcf.fn, "connection"))
     {
         if (pnum > 1L)
@@ -612,7 +614,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         if (length(variant_count) != length(vcf.fn))
             stop("'variant_count' and 'vcf.fn' should have the same length.")
     }
-    if (verbose) cat(date(), "\n", sep="")
+    if (verbose && show_timeheader) .cat("##< ", .tm())
 
     genotype.storage <- "bit2"
 
@@ -781,7 +783,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     {
         if (verbose)
         {
-            cat("    # of cores/jobs: ", pnum, "\n", sep="")
+            .cat("    # of cores/jobs: ", pnum)
             a <- variant_count < 0L
             if (length(a) < length(vcf.fn)) a[length(vcf.fn)] <- NA
             if (anyNA(a) || any(a, na.rm=TRUE))
@@ -821,7 +823,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         if (start+count > num_var+1L)
             stop("Invalid 'count'.")
         if (verbose)
-            cat("    # of variants: ", .pretty(count), "\n", sep="")
+            .cat("    # of variants: ", .pretty(count))
 
         if (count >= pnum)
         {
@@ -831,7 +833,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             psplit <- .file_split(count, pnum, start)
             if (verbose)
             {
-                cat(sprintf("    >>> writing to %d files: <<<\n", pnum))
+                .cat("    >>> writing to ", pnum, " files: <<<")
                 cat(sprintf("        %s\t[%s .. %s]\n", basename(ptmpfn),
                     .pretty(psplit[[1L]]),
                     .pretty(psplit[[1L]] + psplit[[2L]] - 1L)), sep="")
@@ -840,6 +842,18 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             # unlimit the last one
             psplit[[2L]][length(psplit[[2L]])] <- -1L
 
+            # show information
+            update_info <- function(i)
+            {
+                .cat("        |> ", i, " [", .tm(), " done]")
+                flush.console()
+                NULL
+            }
+            if (!isTRUE(verbose)) update_info <- "none"
+
+            # reset memory before calling parallel
+            gc(FALSE, reset=TRUE, full=TRUE)
+
             # conversion in parallel
             seqParallel(parallel, NULL, FUN = function(
                 vcf.fn, header, storage.option, info.import, fmt.import,
@@ -847,16 +861,31 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                 raise.err, ptmpfn, psplit, variant_count)
             {
                 i <- process_index  # the process id, starting from one
-                SeqArray::seqVCF2GDS(vcf.fn, ptmpfn[i], header=oldheader,
-                    storage.option=storage.option, info.import=info.import,
-                    fmt.import=fmt.import, genotype.var.name=genotype.var.name,
-                    ignore.chr.prefix=ignore.chr.prefix,
-                    start = psplit[[1L]][i], count = psplit[[2L]][i],
-                    variant_count=variant_count,
-                    optimize=optim, scenario=scenario, raise.error=raise.err,
-                    digest=FALSE, parallel=FALSE, verbose=FALSE)
-                invisible()  # return
-            }, split="none",
+                tryCatch(
+                {
+                    SeqArray::seqVCF2GDS(vcf.fn, ptmpfn[i], header=oldheader,
+                        storage.option=storage.option, info.import=info.import,
+                        fmt.import=fmt.import,
+                        genotype.var.name=genotype.var.name,
+                        ignore.chr.prefix=ignore.chr.prefix,
+                        start = psplit[[1L]][i], count = psplit[[2L]][i],
+                        variant_count=variant_count,
+                        optimize=optim, scenario=scenario,
+                        raise.error=raise.err,
+                        digest=FALSE, parallel=FALSE, verbose=FALSE)
+                    i  # return the process index
+                }, error = function(e) {
+                    # capture full traceback
+                    trace <- capture.output({
+                        cat("Error: ", e$message, "\n", sep="")
+                        traceback()
+                    })
+                    con <- file(paste0(ptmpfn[i], ".progress.txt"), open="at")
+                    writeLines(trace, con)
+                    close(con)
+                    stop(e$message)
+                })
+            }, split = "none", .combine = update_info,
                 vcf.fn=vcf.fn, header=header, storage.option=storage.option,
                 info.import=info.import, fmt.import=fmt.import,
                 genotype.var.name=genotype.var.name,
@@ -865,7 +894,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
                 ptmpfn=ptmpfn, psplit=psplit, variant_count=variant_count)
 
             if (verbose)
-                cat("    >>> Done (", date(), ") <<<\n", sep="")
+                .cat("    >>> Done (", .tm(), ") <<<")
 
         } else {
             pnum <- 1L
@@ -875,7 +904,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
 
 
     #######################################################################
-    # create a GDS file
+    # create a new GDS file
 
     gfile <- createfn.gds(out.fn)
     on.exit({ if (!is.null(gfile)) closefn.gds(gfile) }, add=TRUE)
@@ -928,12 +957,12 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     # add variant.id
     .AddVar(storage.option, gfile, "variant.id", storage="int32")
 
+    # add chromosome
+    .AddVar(storage.option, gfile, "chromosome", storage="string")
+
     # add position
     # TODO: need to check whether position can be stored in 'int32'
     .AddVar(storage.option, gfile, "position", storage="int32")
-
-    # add chromosome
-    .AddVar(storage.option, gfile, "chromosome", storage="string")
 
     # add allele
     .AddVar(storage.option, gfile, "allele", storage="string")
@@ -1221,15 +1250,15 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         linecnt <- double(1L)
 
         # progress file
-        prog_fn <- paste0(out.fn, ".progress")
+        prog_fn <- paste0(out.fn, ".progress.txt")
         progfile <- file(prog_fn, "wt")
         cat(">>> ", out.fn, " <<<\n", file=progfile, sep="")
         if (verbose)
-            cat("    [Progress Info: ", basename(prog_fn), "]\n", sep="")
+            .cat("    [Progress Info: ", basename(prog_fn), "]")
         infile <- NULL
         on.exit({
             close(progfile)
-            unlink(paste0(out.fn, ".progress"), force=TRUE)
+            unlink(prog_fn, force=TRUE)
             if (!is.null(infile)) close(infile)
         }, add=TRUE)
 
@@ -1332,7 +1361,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
         for (fn in ptmpfn)
         {
             if (verbose)
-                cat("    ", basename(fn), " ...", sep="")
+                cat("    ", basename(fn), sep="")
             # open the gds file
             tmpgds <- seqOpen(fn, allow.duplicate=TRUE)
             # merge variables
@@ -1348,7 +1377,7 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
             # close the file
             seqClose(tmpgds)
             if (verbose)
-                cat(" [done]\n")
+                .cat(" [done, ", .tm(), "]")
         }
 
         filtervar <- as.factor(filtervar)
@@ -1403,20 +1432,14 @@ seqVCF2GDS <- function(vcf.fn, out.fn, header=NULL,
     # optimize access efficiency
 
     if (verbose)
-    {
-        cat("Done.\n")
-        cat(date(), "\n", sep="")
-    }
+        if (optimize) .cat("Done.  # ", .tm()) else cat("Done.\n")
     if (optimize)
     {
         if (verbose)
-        {
             cat("Optimize the access efficiency ...\n")
-            flush.console()
-        }
         cleanup.gds(out.fn, verbose=verbose)
-        if (verbose) cat(date(), "\n", sep="")
     }
+    if (verbose && show_timeheader) .cat("##> ", .tm())
 
     # output
     invisible(normalizePath(out.fn))
