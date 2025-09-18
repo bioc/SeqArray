@@ -584,7 +584,7 @@ seqApply <- function(gdsfile, var.name, FUN,
     .useraw=FALSE, .progress=FALSE, .list_dup=TRUE, .balancing=FALSE, ...)
 {
     # check
-    stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+    stopifnot(inherits(gdsfile, "SeqVarGDSClass") || is.character(gdsfile))
     stopifnot(is.character(var.name), length(var.name)>0L)
     FUN <- match.fun(FUN)
     margin <- match.arg(margin)
@@ -595,16 +595,25 @@ seqApply <- function(gdsfile, var.name, FUN,
         length(.progress)==1L)
     stopifnot(is.logical(.balancing), length(.balancing)==1L)
 
+    # gds file
+    if (is.character(gdsfile))
+    {
+        stopifnot(length(gdsfile)==1L)
+        if (isTRUE(.progress))
+            .cat("Open ", sQuote(basename(gdsfile)))
+        gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
+        on.exit(seqClose(gdsfile))
+    }
+
     parallel <- .McoreParallel(parallel)
     njobs <- .NumParallel(parallel)
-
     param <- list(useraw=.useraw, list_dup=.list_dup,
         progress=isTRUE(.progress), progressfile=NULL)
     if (is.character(.progress) && njobs==1L)
     {
         param$progress <- isTRUE(attr(.progress, "verbose"))
         param$progressfile <- file(.progress, "at")
-        on.exit(close(param$progressfile))
+        on.exit(close(param$progressfile), add=TRUE)
         if (isTRUE(attr(.progress, "delete")))
             on.exit(unlink(.progress, force=TRUE), add=TRUE)
     }
@@ -679,7 +688,7 @@ seqBlockApply <- function(gdsfile, var.name, FUN, margin=c("by.variant"),
     .progress=FALSE, ...)
 {
     # check
-    stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+    stopifnot(inherits(gdsfile, "SeqVarGDSClass") || is.character(gdsfile))
     stopifnot(is.character(var.name), length(var.name)>0L)
     FUN <- match.fun(FUN)
     margin <- match.arg(margin)
@@ -693,12 +702,19 @@ seqBlockApply <- function(gdsfile, var.name, FUN, margin=c("by.variant"),
 
     parallel <- .McoreParallel(parallel)
     njobs <- .NumParallel(parallel)
+    if (!inherits(as.is, "connection") & !inherits(as.is, "gdsn.class"))
+        as.is <- match.arg(as.is)
     param <- list(bsize=bsize, useraw=.useraw, padNA=.padNA, tolist=.tolist,
         progress=.progress, progressfile=NULL)
 
-    if (!inherits(as.is, "connection") & !inherits(as.is, "gdsn.class"))
+    # gds file
+    if (is.character(gdsfile))
     {
-        as.is <- match.arg(as.is)
+        stopifnot(length(gdsfile)==1L)
+        if (isTRUE(.progress))
+            .cat("Open ", sQuote(basename(gdsfile)))
+        gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
+        on.exit(seqClose(gdsfile))
     }
 
     # get # of samples & variants
