@@ -11,14 +11,21 @@ seqAlleleFreq(gdsfile, ref.allele=0L, minor=FALSE, parallel=seqGetParallel(),
     balancing=NA, verbose=FALSE)
 seqAlleleCount(gdsfile, ref.allele=0L, minor=FALSE, parallel=seqGetParallel(),
     balancing=NA, verbose=FALSE)
-seqGetAF_AC_Missing(gdsfile, minor=FALSE, parallel=seqGetParallel(),
-    balancing=NA, verbose=FALSE)
+seqGetAF_AC_Missing(gdsfile, minor=FALSE, alt=FALSE, ns=FALSE,
+    parallel=seqGetParallel(), balancing=NA, verbose=FALSE)
 }
 \arguments{
     \item{gdsfile}{a \code{\link{SeqVarGDSClass}} object}
     \item{ref.allele}{\code{NULL}, a single numeric value, a numeric vector
         or a character vector; see Value}
     \item{minor}{if \code{TRUE}, return minor allele frequency/count}
+    \item{alt}{if \code{TRUE} and \code{minor=FALSE}, return the frequencies
+        and counts for the alternative alleles in \code{seqGetAF_AC_Missing};
+        otherwise, return the frequencies and counts for the reference alleles;
+        if there are more than two alleles at a site, the alternative alleles
+        will be collapsed}
+    \item{ns}{if \code{TRUE}, return the numbers of samples without missing
+        genotypes in the column \code{ns}, used in \code{seqGetAF_AC_Missing}}
     \item{parallel}{\code{FALSE} (serial processing), \code{TRUE} (multicore
         processing), numeric value or other value; \code{parallel} is passed
         to the argument \code{cl} in \code{\link{seqParallel}}, see
@@ -92,6 +99,14 @@ head(v)
 
 # close the GDS file
 seqClose(f)
+
+# A GDS file with imputed dosages
+ds_fn <- seqExampleFileName("dosage")
+ds_fn
+
+str(seqGetAF_AC_Missing(ds_fn, alt=FALSE))
+str(seqGetAF_AC_Missing(ds_fn, alt=TRUE))
+str(seqGetAF_AC_Missing(ds_fn, minor=TRUE))
 }
 
 \keyword{gds}
