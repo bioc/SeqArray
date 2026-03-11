@@ -1215,18 +1215,30 @@ seqGetAF_AC_Missing <- function(gdsfile, minor=FALSE, alt=FALSE, ns=FALSE,
     seqGet2bGeno(gdsfile, samp_by_var=TRUE, verbose=verbose)
 }
 
-seqGet2bGeno <- function(gdsfile, samp_by_var=TRUE, ext_nbyte=0L, verbose=FALSE)
+seqGet2bGeno <- function(gdsfile, samp_by_var=TRUE, ext_nbyte=0L,
+    parallel=FALSE, verbose=FALSE)
 {
     # check
-    stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+    if (is.character(gdsfile))
+    {
+        stopifnot(length(gdsfile)==1L)
+        if (isTRUE(verbose))
+            .cat("Open ", sQuote(basename(gdsfile)))
+        gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
+        on.exit(seqClose(gdsfile))
+    } else {
+        stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+    }
     stopifnot(is.logical(samp_by_var), length(samp_by_var)==1L)
     stopifnot(is.numeric(ext_nbyte), length(ext_nbyte)==1L, ext_nbyte>=0L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
+    parallel <- .McoreParallel(parallel)
+    njobs <- .NumParallel(parallel)
 
     # get gds node
     nd <- index.gdsn(gdsfile, "genotype/data", silent=TRUE)
     if (!is.null(nd))
-        varnm <- "$dosage_alt"
+        varnm <- "$dosage_alt2"
     else if (!is.null(index.gdsn(gdsfile, "annotation/format/DS", silent=TRUE)))
         varnm <- "annotation/format/DS"
     else
@@ -1238,26 +1250,87 @@ seqGet2bGeno <- function(gdsfile, samp_by_var=TRUE, ext_nbyte=0L, verbose=FALSE)
     nvar  <- dm[3L]
     if (isTRUE(samp_by_var))
     {
-        geno <- matrix(as.raw(0xFF), nrow=ceiling(nsamp/4)+ext_nbyte, ncol=nvar)
-        cfunc <- .cfunction("FC_SetPackedGenoSxV")
+        nr <- ceiling(nsamp/4L) + ext_nbyte
+        nc <- nvar
     } else {
-        geno <- matrix(as.raw(0L), nrow=ceiling(nvar/4)+ext_nbyte, ncol=nsamp)
-        cfunc <- .cfunction("FC_SetPackedGenoVxS")
+        nr <- ceiling(nvar/4L) + ext_nbyte
+        nc <- nsamp
     }
-    if (length(geno) <= 0) return(geno)
 
-    # initialize
-    .cfunction("FC_InitPackedGeno")(geno)
-    # fill
-    seqApply(gdsfile, varnm, FUN=cfunc, as.is="none", .useraw=NA,
-        .progress=verbose)
-    # remainder for samp_by_var=FALSE
-    if (!isTRUE(samp_by_var))
+    if (njobs == 1L)
     {
-        n <- nrow(geno)*4L - nvar
-        for (i in seq_len(n)) cfunc(NULL)  # missing genotype
+        # sequential processing
+        gm <- matrix(as.raw(0xFF), nrow=nr, ncol=nc)
+        if (nsamp<=0L || nvar<=0L) return(gm)
+        # initialize
+        .cfunction("FC_InitPackedGeno")(gm)
+        # fill
+        seqApply(gdsfile, varnm,
+            FUN = .cfunction(if (isTRUE(samp_by_var))
+                "FC_SetPackedGenoSxV" else "FC_SetPackedGenoVxS"),
+            as.is="none", .useraw=NA, .progress=verbose)
+
+    } else {
+        # multicore processing
+        # initialize
+        if (is.numeric(parallel) || isTRUE(parallel))
+        {
+            parallel <- makeCluster(njobs)
+            on.exit(stopCluster(parallel), add=TRUE)
+        }
+        assign("geno", matrix(as.raw(0xFF), nrow=nr, ncol=nc), envir=.PkgEnv)
+        on.exit(remove(geno, envir=.PkgEnv), add=TRUE)
+        # process
+        if (isTRUE(samp_by_var))
+        {
+            # block size
+            bs <- ceiling(nvar/100L)
+            # parallel loading
+            seqParallel(parallel, gdsfile, FUN=function(gds, nr, varnm)
+            {
+                # initialize
+                nc <- .seldim(gds)[3L]
+                g <- matrix(as.raw(0xFF), nrow=nr, ncol=nc)
+                .cfunction("FC_InitPackedGeno")(g)
+                seqApply(gdsfile, varnm, FUN=.cfunction("FC_SetPackedGenoSxV"),
+                    as.is="none", .useraw=NA)
+                # output
+                list(i=process_block_index, g=g)
+            }, .combine=function(x)
+            {
+                .cfunction4("FC_SetPackedGenoSubsetSxV")(.PkgEnv$geno, x$i, bs, x$g)
+                remove(x)
+                gc(FALSE, reset=TRUE)
+                NULL
+            }, .balancing=TRUE, .bl_size=bs, .bl_progress=verbose,
+                nr=nr, varnm=varnm)
+        } else {
+            # block size
+            bs <- ceiling(ceiling(nvar/100L)/4L) * 4L
+            # parallel loading
+            seqParallel(parallel, gdsfile, FUN=function(gds, nc, varnm)
+            {
+                # initialize
+                nr <- ceiling(.seldim(gds)[3L]/4L)
+                g <- matrix(as.raw(0xFF), nrow=nr, ncol=nc)
+                .cfunction("FC_InitPackedGeno")(g)
+                seqApply(gdsfile, varnm, FUN=.cfunction("FC_SetPackedGenoVxS"),
+                    as.is="none", .useraw=NA)
+                # output
+                list(i=process_block_index, g=g)
+            }, .combine=function(x)
+            {
+                .cfunction4("FC_SetPackedGenoSubsetVxS")(.PkgEnv$geno, x$i, bs, x$g)
+                remove(x)
+                gc(FALSE, reset=TRUE)
+                NULL
+            }, .balancing=TRUE, .bl_size=bs, .bl_progress=verbose,
+                nc=nc, varnm=varnm)
+        }
+        # output
+        gm <- .PkgEnv$geno
     }
 
-    # output
-    geno
+    # return
+    gm
 }

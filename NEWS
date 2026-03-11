@@ -1,3 +1,26 @@
+CHANGES IN VERSION 1.51.2
+-------------------------
+
+NEW FEATURES
+
+    o new 'header=TRUE' in `seqGDS2VCF()` to specify whether exporting the
+      metadata header to a VCF file or not
+
+    o new 'nosample=TRUE' in `seqGDS2VCF()` to exclude the sample-level data
+
+    o `seqGet2bGeno()` allows a GDS file name in the first argument
+
+    o new 'parallel' in `seqGet2bGeno()` for parallel loading
+
+    o new 'SeqArray:::process_block_index' and 'SeqArray:::process_block_count'
+      used in children processes when balancing work
+
+UTILITIES
+
+    o Reduce memory usage in `seqParallel()` by avoiding the transfer of unused
+      data during work balancing in parallel
+
+
 CHANGES IN VERSION 1.50.1
 -------------------------
 

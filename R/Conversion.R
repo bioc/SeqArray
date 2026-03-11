@@ -28,7 +28,7 @@
 #
 
 seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
-    chr_prefix="", use_Rsamtools=TRUE, verbose=TRUE)
+    chr_prefix="", header=TRUE, no_sample=NA, use_Rsamtools=TRUE, verbose=TRUE)
 {
     # check
     stopifnot(is.character(gdsfile) | inherits(gdsfile, "SeqVarGDSClass"))
@@ -37,6 +37,8 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
     stopifnot(is.null(info.var) | is.character(info.var))
     stopifnot(is.null(fmt.var) | is.character(fmt.var))
     stopifnot(is.character(chr_prefix), length(chr_prefix)==1L)
+    stopifnot(is.logical(header), length(header)==1L)
+    stopifnot(is.logical(no_sample), length(no_sample)==1L)
     stopifnot(is.logical(use_Rsamtools), length(use_Rsamtools)==1L)
     stopifnot(is.logical(verbose), length(verbose)==1L)
     show_timeheader <- !isTRUE(attr(verbose, "header_no_time"))
@@ -48,6 +50,16 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
             .cat("Open ", sQuote(basename(gdsfile)))
         gdsfile <- seqOpen(gdsfile, allow.duplicate=TRUE)
         on.exit(seqClose(gdsfile))
+        if (isTRUE(no_sample))
+            seqSetFilter(gdsfile, sample.id=character(), verbose=FALSE)
+    } else {
+        stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
+        if (isTRUE(no_sample))
+        {
+            seqFilterPush(gdsfile)
+            seqSetFilter(gdsfile, sample.id=character(), verbose=FALSE)
+            on.exit(seqFilterPop(gdsfile))
+        }
     }
 
     # get a summary
@@ -148,6 +160,7 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
         .cat("    INFO Field: ", ifelse(s!="", s, "<none>"))
         s <- paste(z$format$ID, collapse=", ")
         .cat("    FORMAT Field: ", ifelse(s!="", s, "<none>"))
+        if (!isTRUE(header)) cat("    No header in VCF\n")
         .cat("    output to ",
             c("a VCF text file", "a BGZF-format gzip file",
             "a general gzip file", "a bz file", "a xz file")[outfmt])
@@ -274,9 +287,9 @@ seqGDS2VCF <- function(gdsfile, vcf.fn, info.var=NULL, fmt.var=NULL,
 
     a <- c("#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO")
     s <- seqGetData(gdsfile, "sample.id")
-    if (length(s) > 0L) a <- c(a, "FORMAT", s)
+    if (length(s)) a <- c(a, "FORMAT", s)
     txt <- c(txt, paste(a, collapse="\t"))
-    writeLines(txt, ofile)
+    if (isTRUE(header)) writeLines(txt, ofile)
 
 
     ######################################################

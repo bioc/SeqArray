@@ -2,7 +2,7 @@
 //
 // Methods.cpp: the C/C++ codes for the SeqArray package
 //
-// Copyright (C) 2015-2024    Xiuwen Zheng
+// Copyright (C) 2015-2026    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -75,10 +75,11 @@ template<typename TYPE>
 		unsigned char bit_shift)
 {
 	bit_shift *= 2;  // since bit_shift is 0, 1, 2 or 3
+	const unsigned char mask = ~((0x03 << bit_shift));
 	for (size_t i=0; i < n; i++, p+=m)
 	{
 		unsigned char b = g2b(s[i]);
-		*p |= (b << bit_shift);
+		*p = ((*p) & mask) | (b << bit_shift);
 	}
 }
 
@@ -86,8 +87,8 @@ static void packed_geno_VxS_missing(Rbyte *p, size_t n, size_t m,
 	unsigned char bit_shift)
 {
 	bit_shift *= 2;  // since bit_shift is 0, 1, 2 or 3
-	const unsigned char b = (0x03 << bit_shift);
-	for (size_t i=0; i < n; i++, p+=m) *p |= b;
+	const unsigned char mask = (0x03 << bit_shift);
+	for (size_t i=0; i < n; i++, p+=m) *p |= mask;
 }
 
 
@@ -1109,8 +1110,9 @@ static const char *ERR_PACKED_GENO_TYPE =
 COREARRAY_DLL_EXPORT SEXP FC_InitPackedGeno(SEXP geno)
 {
 	geno_raw_ptr = RAW(geno);
-	geno_nrow = INTEGER(GET_DIM(geno))[0];
-	geno_ncol = INTEGER(GET_DIM(geno))[1];
+	const int *dm = INTEGER(GET_DIM(geno));
+	geno_nrow = dm[0];
+	geno_ncol = dm[1];
 	geno_index = 0;
 	return R_NilValue;
 }
@@ -1171,6 +1173,40 @@ COREARRAY_DLL_EXPORT SEXP FC_SetPackedGenoVxS(SEXP dosage)
 		packed_geno_VxS_missing(p, geno_ncol, geno_nrow, bit_shift);
 	}
 	geno_index ++;
+	return R_NilValue;
+}
+
+/// store dosage subset in a 2-bit packed matrix (sample by variant)
+COREARRAY_DLL_EXPORT SEXP FC_SetPackedGenoSubsetSxV(SEXP geno_out,
+	SEXP block_i, SEXP block_size, SEXP geno_sub)
+{
+	const int i_col = (Rf_asInteger(block_i) - 1) * Rf_asInteger(block_size);
+	const size_t nrow = INTEGER(GET_DIM(geno_out))[0];
+	Rbyte *p = RAW(geno_out) + nrow*i_col;
+	const Rbyte *s = RAW(geno_sub);
+	const size_t n = Rf_xlength(geno_sub);
+	memcpy(p, s, n);
+	return R_NilValue;
+}
+
+/// store dosage subset in a 2-bit packed matrix (variant by sample)
+COREARRAY_DLL_EXPORT SEXP FC_SetPackedGenoSubsetVxS(SEXP geno_out,
+	SEXP block_i, SEXP block_size, SEXP geno_sub)
+{
+	const int *d1 = INTEGER(GET_DIM(geno_out));
+	const int *d2 = INTEGER(GET_DIM(geno_sub));
+	const size_t nr1 = d1[0], nc1 = d1[1];
+	const size_t nr2 = d2[0], nc2 = d2[1];
+	if (nc1 != nc2)
+		Rf_error("Internal error in FC_SetPackedGenoSubsetVxS: # of columns.");
+	const int i_row = (Rf_asInteger(block_i)-1) * Rf_asInteger(block_size) / 4;
+	Rbyte *p = RAW(geno_out) + i_row;
+	Rbyte *s = RAW(geno_sub);
+	for (size_t i=0; i < nc1; i++)
+	{
+		memcpy(p, s, nr2);
+		p += nr1; s += nr2;
+	}
 	return R_NilValue;
 }
 
