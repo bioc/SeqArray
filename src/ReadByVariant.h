@@ -236,6 +236,86 @@ public:
 	int GetNumAllele();
 };
 
+
+/// Object for reading the reference allele variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_RefAllele: public CApply_Variant
+{
+private:
+	string strbuf;
+protected:
+	SEXP VarNode;  ///< R object
+public:
+	/// constructor
+	CApply_Variant_RefAllele(CFileInfo &File);
+
+	virtual void ReadData(SEXP val);
+	virtual SEXP NeedRData(int &nProtected);
+};
+
+
+/// Object for reading the alternative allele(s) variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_AltAllele: public CApply_Variant
+{
+private:
+	string strbuf;
+protected:
+	SEXP VarNode;  ///< R object
+public:
+	/// constructor
+	CApply_Variant_AltAllele(CFileInfo &File);
+
+	virtual void ReadData(SEXP val);
+	virtual SEXP NeedRData(int &nProtected);
+};
+
+
+/// Object for reading chromosome:position variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_ChromPos: public CApply_Variant
+{
+protected:
+	CChromIndex *ChromIndex;
+	int *PtrPos;
+	SEXP VarNode;  ///< R object
+public:
+	/// constructor
+	CApply_Variant_ChromPos(CFileInfo &File);
+
+	virtual void ReadData(SEXP val);
+	virtual SEXP NeedRData(int &nProtected);
+};
+
+
+/// Object for reading chromosome:position_allele variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_ChromPosAllele: public CApply_Variant
+{
+private:
+	string strbuf;
+protected:
+	CChromIndex *ChromIndex;
+	int *PtrPos;
+	SEXP VarNode;  ///< R object
+public:
+	/// constructor
+	CApply_Variant_ChromPosAllele(CFileInfo &File);
+
+	virtual void ReadData(SEXP val);
+	virtual SEXP NeedRData(int &nProtected);
+};
+
+
+/// Object for reading the 1-based variant index variant by variant
+class COREARRAY_DLL_LOCAL CApply_Variant_VariantIndex: public CApply_Variant
+{
+protected:
+	SEXP VarNode;  ///< R object
+public:
+	/// constructor
+	CApply_Variant_VariantIndex(CFileInfo &File);
+
+	virtual void ReadData(SEXP val);
+	virtual SEXP NeedRData(int &nProtected);
+};
+
 }
 
 
