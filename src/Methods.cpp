@@ -139,7 +139,10 @@ COREARRAY_DLL_EXPORT SEXP FC_Missing_PerVariant(SEXP Geno)
 /// Calculate the missing rate per sample
 COREARRAY_DLL_EXPORT SEXP FC_Missing_PerSamp(SEXP Geno, SEXP sum)
 {
-	int *pdim = INTEGER(GET_DIM(Geno));
+	SEXP dm = GET_DIM(Geno);
+	if (Rf_isNull(dm) || XLENGTH(dm) != 2)
+		throw ErrSeqArray("Geno must be a 2D array for FC_Missing_PerSamp.");
+	int *pdim = INTEGER(dm);
 	int num_ploidy=pdim[0], num_sample=pdim[1];
 	int *pS = INTEGER(sum);
 
@@ -212,7 +215,10 @@ COREARRAY_DLL_EXPORT SEXP FC_Missing_DS_PerSamp(SEXP DS, SEXP sum, SEXP tmp)
 /// Calculate the missing rate per sample and variant
 COREARRAY_DLL_EXPORT SEXP FC_Missing_SampVariant(SEXP Geno, SEXP sum)
 {
-	int *pdim = INTEGER(GET_DIM(Geno));
+	SEXP dm = GET_DIM(Geno);
+	if (Rf_isNull(dm) || XLENGTH(dm) != 2)
+		throw ErrSeqArray("Geno must be a 2D array for FC_Missing_SampVariant.");
+	int *pdim = INTEGER(dm);
 	int num_ploidy=pdim[0], num_sample=pdim[1];
 	int *pS = INTEGER(sum), n=0;
 
@@ -452,7 +458,7 @@ COREARRAY_DLL_EXPORT SEXP FC_AF_DS_Ref(SEXP DS)
 		throw ErrSeqArray(ERR_DS_TYPE);
 	}
 
-	if (num > 0)
+	if (num > 0 && AFreq_Ploidy > 0)
 	{
 		double p = 1 - sum * m / (num * AFreq_Ploidy);
 		if (AFreq_Minor && p>0.5) p = 1 - p;
@@ -591,7 +597,7 @@ COREARRAY_DLL_EXPORT SEXP FC_AF_DS_Allele(SEXP List)
 		}
 	}
 
-	if (num > 0)
+	if (num > 0 && AFreq_Ploidy > 0)
 	{
 		double p = sum / (num * AFreq_Ploidy);
 		if (AFreq_Minor && p>0.5) p = 1 - p;

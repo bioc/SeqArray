@@ -2,7 +2,7 @@
 //
 // vectorization.h: compiler optimization with vectorization
 //
-// Copyright (C) 2016-2024    Xiuwen Zheng
+// Copyright (C) 2016-2026    Xiuwen Zheng
 //
 // This file is part of SeqArray.
 //
@@ -23,7 +23,7 @@
  *	\file     vectorization.h
  *	\author   Xiuwen Zheng [zhengx@u.washington.edu]
  *	\version  1.0
- *	\date     2016-2024
+ *	\date     2016-2026
  *	\brief    compiler optimization with vectorization
  *	\details
 **/
@@ -63,6 +63,10 @@
 #   if defined(COREARRAY_SIMD_AVX) || defined(COREARRAY_SIMD_AVX2)
 #       include <immintrin.h>  // AVX, AVX2
 #   endif
+
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+#   define COREARRAY_SIMD_NEON
+#   include <arm_neon.h>
 
 #endif
 
@@ -279,6 +283,18 @@ inline static int POPCNT_U64(uint64_t x)
 		s = _mm256_sad_epu8(s, _mm256_setzero_si256());
 		s = _mm256_add_epi64(s, _mm256_permute4x64_epi64(s, _MM_SHUFFLE(1,0,3,2)));
 		return _mm256_extract_epi32(s,0) + _mm256_extract_epi32(s,2);
+	}
+#endif
+
+
+#ifdef COREARRAY_SIMD_NEON
+	inline static int vec_neon_sum_u8(uint8x16_t s)
+	{
+		return (int)vaddlvq_u8(s);
+	}
+	inline static int vec_neon_sum_i32(int32x4_t s)
+	{
+		return vaddvq_s32(s);
 	}
 #endif
 
