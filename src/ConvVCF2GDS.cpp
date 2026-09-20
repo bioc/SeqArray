@@ -23,6 +23,7 @@
 #include <set>
 #include <algorithm>
 #include "Index.h"
+#include "CompressIO.h"
 #include "vectorization.h"
 
 
@@ -70,25 +71,53 @@ static inline void end_timing()
 
 static Rconnection VCF_File = NULL;  ///< R connection object
 
+
+
+static CBgzfReader VCF_Bgzf;  ///< the BGZF reader, if the input is a BGZF file
+
 static vector<char> VCF_Buffer;  ///< reading buffer
 static char *VCF_Buffer_Ptr;     ///< the current pointer to reading buffer
 static char *VCF_Buffer_EndPtr;  ///< the end pointer to reading buffer
 static const size_t VCF_BUFFER_SIZE = 65536;  ///< reading buffer size
 static const size_t VCF_BUFFER_SIZE_PLUS = 32;  ///< additional buffer is needed since *VCF_Buffer_EndPtr might be revised
+static C_Int64 VCF_Total_Read;   ///< the total number of bytes stored in VCF_Buffer
+static Rboolean VCF_EOF_Signal;  ///< TRUE if the end of file is reached
 
-/// initialize
-inline static void Init_VCF_Buffer(SEXP File)
+inline static void Read_VCF_Buffer();
+
+/// initialize; 'File' is either an R connection object, or the file name of
+///   a BGZF file, in which case the reading starts from the block at the file
+///   offset 'addr' (with the first 'uoffset' uncompressed bytes skipped)
+inline static void Init_VCF_Buffer(SEXP File, C_Int64 addr=0,
+	C_Int64 uoffset=0)
 {
-	VCF_File = R_GetConnection(File);
-	VCF_File->EOF_signalled = FALSE;
 	VCF_Buffer.resize(VCF_BUFFER_SIZE + VCF_BUFFER_SIZE_PLUS);
 	VCF_Buffer_EndPtr = VCF_Buffer_Ptr = &VCF_Buffer[0];
+	VCF_Total_Read = 0;
+	VCF_EOF_Signal = FALSE;
+	if (Rf_isString(File))
+	{
+		VCF_File = NULL;
+		VCF_Bgzf.Open(CHAR(STRING_ELT(File, 0)), addr);
+		if (uoffset > 0)
+		{
+			Read_VCF_Buffer();
+			if (VCF_Buffer_EndPtr - VCF_Buffer_Ptr < uoffset)
+				throw ErrSeqArray("Invalid offset in the BGZF file.");
+			VCF_Buffer_Ptr += uoffset;
+		}
+	} else {
+		VCF_Bgzf.Close();
+		VCF_File = R_GetConnection(File);
+		VCF_File->EOF_signalled = FALSE;
+	}
 }
 
 /// finalize
 inline static void Done_VCF_Buffer()
 {
 	VCF_File = NULL;
+	VCF_Bgzf.Close();
 	VCF_Buffer.clear();
 	vector<char>().swap(VCF_Buffer);
 	VCF_Buffer_Ptr = VCF_Buffer_EndPtr = NULL;
@@ -98,6 +127,21 @@ inline static void Done_VCF_Buffer()
 /// read file buffer
 inline static void Read_VCF_Buffer()
 {
+	if (VCF_Bgzf.IsOpen())
+	{
+		// exactly one BGZF block is stored in VCF_Buffer, so that the virtual
+		// offset of VCF_Buffer_Ptr is known, see VCF_Position()
+		size_t n = VCF_Bgzf.ReadBlock(&VCF_Buffer[0]);
+		VCF_Buffer_Ptr = &VCF_Buffer[0];
+		VCF_Buffer_EndPtr = VCF_Buffer_Ptr + n;
+		if (n <= 0)
+		{
+			if (VCF_EOF_Signal) throw ErrSeqArray("read text error.");
+			VCF_EOF_Signal = TRUE;
+		}
+		return;
+	}
+
 	VCF_Buffer_Ptr = &VCF_Buffer[0];
 	size_t n = 0;
 	size_t unread_len = VCF_File->buff_stored_len - VCF_File->buff_pos;
@@ -116,21 +160,38 @@ inline static void Read_VCF_Buffer()
 	}
 	VCF_Buffer_Ptr = &VCF_Buffer[0];
 	VCF_Buffer_EndPtr = VCF_Buffer_Ptr + n;
+	VCF_Total_Read += n;
 	if (n <= 0)
 	{
 		if (VCF_File->EOF_signalled)
 			throw ErrSeqArray("read text error.");
 		VCF_File->EOF_signalled = TRUE;
+		VCF_EOF_Signal = TRUE;
 	}
 }
 
 /// test EOF
 inline static bool VCF_EOF()
 {
-	if (VCF_File->EOF_signalled) return true;
+	if (VCF_EOF_Signal) return true;
 	if (VCF_Buffer_Ptr >= VCF_Buffer_EndPtr)
 		Read_VCF_Buffer();
 	return (VCF_Buffer_Ptr >= VCF_Buffer_EndPtr);
+}
+
+/// the position of VCF_Buffer_Ptr: the file offset in bytes if reading from
+///   an R connection object, or the virtual offset (the file offset of the
+///   current block, the offset within the block) for a BGZF file
+inline static C_Int64 VCF_Position()
+{
+	if (VCF_Bgzf.IsOpen()) return VCF_Bgzf.Addr();
+	return VCF_Total_Read - (VCF_Buffer_EndPtr - VCF_Buffer_Ptr);
+}
+
+inline static C_Int64 VCF_Position_U()
+{
+	if (VCF_Bgzf.IsOpen()) return VCF_Buffer_Ptr - &VCF_Buffer[0];
+	return 0;
 }
 
 
@@ -174,7 +235,7 @@ inline static void DoneText()
 /// get a string with a seperator '\t', which is saved in _Text_Buffer
 inline static void GetText(int last_column)
 {
-	if (VCF_File->EOF_signalled)
+	if (VCF_EOF_Signal)
 		throw ErrSeqArray("it is the end of file.");
 
 	VCF_ColumnNum = VCF_NextColumnNum;
@@ -220,7 +281,7 @@ inline static void GetText(int last_column)
 		VCF_Buffer_Ptr += n;
 		Text_pEnd += n;
 
-		if (p < VCF_Buffer_EndPtr || VCF_File->EOF_signalled)
+		if (p < VCF_Buffer_EndPtr || VCF_EOF_Signal)
 			break;
 		else
 			Read_VCF_Buffer();
@@ -245,7 +306,7 @@ inline static void GetText(int last_column)
 				VCF_Buffer_Ptr ++;
 				if (VCF_Buffer_Ptr >= VCF_Buffer_EndPtr)
 				{
-					if (VCF_File->EOF_signalled)
+					if (VCF_EOF_Signal)
 						break;
 					if (flag)
 					{   // copy to Text_Buffer
@@ -289,7 +350,7 @@ inline static void SkipLine()
 		{
 			ch = *VCF_Buffer_Ptr;
 			break;
-		} else if (!VCF_File->EOF_signalled)
+		} else if (!VCF_EOF_Signal)
 			Read_VCF_Buffer();
 		else
 			break;
@@ -302,7 +363,7 @@ inline static void SkipLine()
 			VCF_Buffer_Ptr ++;
 			if (VCF_Buffer_Ptr >= VCF_Buffer_EndPtr)
 			{
-				if (VCF_File->EOF_signalled)
+				if (VCF_EOF_Signal)
 					break;
 				Read_VCF_Buffer();
 			}
@@ -1061,11 +1122,41 @@ static const char *datetime_str()
 	return date_buffer;
 }
 
+/// Count the number of variants, and record the file offsets if OffsetStep > 0
+///   'Range' is NULL, or c(open_addr, first_addr, end_addr) for a BGZF file:
+///     the reading starts from the block at 'open_addr', and only the lines
+///     beginning in the blocks [first_addr, end_addr) are counted, so that a
+///     BGZF file can be counted in parallel, see BGZF_Split()
+///   Return list(num, offset, uoffset, index, line):
+///     num,   the number of lines (i.e., variants) in the range
+///     offset, the offsets of the 1st, (step+1)-th, (2*step+1)-th, ... lines,
+///             or NULL if OffsetStep <= 0; see VCF_Position()
+///     uoffset, the within-block offsets, all zeros unless 'File' is a BGZF
+///             file name
+///     index, index[k] is the variant index (1-based, within the range) at
+///             offset[k]
+///     line,  the line number (1-based, counting the header) of the 1st line,
+///             or NA if 'SkipHead' is FALSE
 COREARRAY_DLL_EXPORT SEXP SEQ_VCF_NumLines(SEXP File, SEXP SkipHead,
-	SEXP Verbose)
+	SEXP OffsetStep, SEXP Range, SEXP Verbose)
 {
 	const bool verbose = Rf_asLogical(Verbose) == TRUE;
-	Init_VCF_Buffer(File);
+	const C_Int64 step = (C_Int64)Rf_asReal(OffsetStep);
+	vector<double> offset, uoffset, index;  // the offsets, if step > 0
+	C_Int64 first_line = -1;  // the line number of the 1st line, -1 for none
+
+	// the range of the blocks to be counted
+	C_Int64 open_addr=0, first_addr=0, end_addr=-1;
+	if (!Rf_isNull(Range) && (RLength(Range) >= 3))
+	{
+		open_addr  = (C_Int64)REAL(Range)[0];
+		first_addr = (C_Int64)REAL(Range)[1];
+		end_addr   = (C_Int64)REAL(Range)[2];
+	}
+
+	COREARRAY_TRY
+
+	Init_VCF_Buffer(File, open_addr, 0);
 
 	if (Rf_asLogical(SkipHead) == TRUE)
 	{
@@ -1080,7 +1171,15 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_NumLines(SEXP File, SEXP SkipHead,
 				break;
 			}
 		}
+		first_line = VCF_NextLineNum;  // the 1st line after the header
 		DoneText();
+	} else if (first_addr > open_addr)
+	{
+		// the reading starts from the block before 'first_addr', so skip the
+		//   lines beginning before it; note that the first line here may be
+		//   incomplete, and it belongs to the previous part
+		while (!VCF_EOF() && (VCF_Position() < first_addr))
+			SkipLine();
 	}
 
 	// get the number of left lines
@@ -1088,6 +1187,15 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_NumLines(SEXP File, SEXP SkipHead,
 	int m0 = 0, m1 = 0;
 	while (!VCF_EOF())
 	{
+		// VCF_Buffer_Ptr points to the first character of the n-th line;
+		//   a line belongs to this part if it begins before 'end_addr'
+		if ((end_addr >= 0) && (VCF_Position() >= end_addr)) break;
+		if ((step > 0) && ((n % step) == 0))
+		{
+			offset.push_back((double)VCF_Position());
+			uoffset.push_back((double)VCF_Position_U());
+			index.push_back((double)(n + 1));
+		}
 		n ++;
 		if (verbose && ((++m0) >= 20000))
 		{
@@ -1106,7 +1214,42 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_NumLines(SEXP File, SEXP SkipHead,
 	}
 
 	Done_VCF_Buffer();
-	return Rf_ScalarReal(n);
+
+	// output
+	SEXP ans = PROTECT(NEW_LIST(5));
+	SET_ELEMENT(ans, 0, Rf_ScalarReal(n));
+	if (step > 0)
+	{
+		SEXP v1 = PROTECT(NEW_NUMERIC(offset.size()));
+		SEXP v2 = PROTECT(NEW_NUMERIC(uoffset.size()));
+		SEXP v3 = PROTECT(NEW_NUMERIC(index.size()));
+		if (!offset.empty())
+		{
+			memcpy(REAL(v1), &offset[0], sizeof(double)*offset.size());
+			memcpy(REAL(v2), &uoffset[0], sizeof(double)*uoffset.size());
+			memcpy(REAL(v3), &index[0], sizeof(double)*index.size());
+		}
+		SET_ELEMENT(ans, 1, v1);
+		SET_ELEMENT(ans, 2, v2);
+		SET_ELEMENT(ans, 3, v3);
+		UNPROTECT(3);
+	}
+	SET_ELEMENT(ans, 4, Rf_ScalarReal(
+		first_line >= 1 ? (double)first_line : NA_REAL));
+	SEXP nm = PROTECT(NEW_CHARACTER(5));
+	SET_STRING_ELT(nm, 0, Rf_mkChar("num"));
+	SET_STRING_ELT(nm, 1, Rf_mkChar("offset"));
+	SET_STRING_ELT(nm, 2, Rf_mkChar("uoffset"));
+	SET_STRING_ELT(nm, 3, Rf_mkChar("index"));
+	SET_STRING_ELT(nm, 4, Rf_mkChar("line"));
+	SET_NAMES(ans, nm);
+	rv_ans = ans;
+	UNPROTECT(2);
+
+	// the file should be closed if an error is raised
+	CORE_CATCH({ Done_VCF_Buffer(); has_error = true; });
+	if (has_error) Rf_error("%s", GDS_GetError());
+	return rv_ans;
 }
 
 
@@ -1132,6 +1275,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Split(SEXP start, SEXP count, SEXP pnum,
 	double cnt = Rf_asReal(count);
 	double scale = cnt / num;
 	double st = Rf_asReal(start);
+	const double st_end = st + cnt;  // the variant after the last one
 	for (int i=0; i < num; i++)
 	{
 		double old_st = REAL(start_array)[i] = round(st);
@@ -1143,8 +1287,8 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Split(SEXP start, SEXP count, SEXP pnum,
 			st += m - n;
 			n = m;
 		}
-		if ((old_st + n) > (cnt + 1))
-			n = round(cnt + 1 - old_st);
+		if ((old_st + n) > st_end)
+			n = round(st_end - old_st);
 		REAL(count_array)[i] = (n >= 0) ? n : 0;
 	}
 
@@ -1200,8 +1344,27 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Parse(SEXP vcf_fn, SEXP header,
 		C_Int64 variant_start = (C_Int64)Rf_asReal(RGetListElement(param, "start"));
 		// variant count
 		C_Int64 variant_count = (C_Int64)Rf_asReal(RGetListElement(param, "count"));
-		// input file
-		Init_VCF_Buffer(RGetListElement(param, "infile"));
+		// input file: an R connection object, or a BGZF file name together
+		//   with the starting offset c(the block offset, the within-block one)
+		C_Int64 blk_first=0, blk_end=-1;  // the range of the blocks to parse
+		{
+			SEXP off = RGetListElement(param, "file.offset");
+			C_Int64 a=0, u=0;
+			if (!Rf_isNull(off) && (RLength(off) >= 2))
+			{
+				a = (C_Int64)REAL(off)[0]; u = (C_Int64)REAL(off)[1];
+			}
+			// c(open_addr, first_addr, end_addr): parse the lines beginning
+			//   in the blocks [first_addr, end_addr), see BGZF_Split()
+			SEXP rg = RGetListElement(param, "block.range");
+			if (!Rf_isNull(rg) && (RLength(rg) >= 3))
+			{
+				a = (C_Int64)REAL(rg)[0]; u = 0;
+				blk_first = (C_Int64)REAL(rg)[1];
+				blk_end   = (C_Int64)REAL(rg)[2];
+			}
+			Init_VCF_Buffer(RGetListElement(param, "infile"), a, u);
+		}
 		// chromosome prefix
 		SEXP ChrPrefix = RGetListElement(param, "chr.prefix");
 		// progress file
@@ -1370,6 +1533,21 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Parse(SEXP vcf_fn, SEXP header,
 					break;
 				}
 			}
+		} else {
+			// the file offset is given, so the VCF header is not read here;
+			// set the line number for the error messages
+			SEXP ln = RGetListElement(param, "line.base");
+			if (!Rf_isNull(ln))
+			{
+				double v = Rf_asReal(ln);
+				if (R_FINITE(v) && (v >= 1))
+					VCF_LineNum = VCF_NextLineNum = (C_Int64)v;
+			}
+			// the reading starts from the block before 'blk_first', so skip
+			//   the lines beginning before it; the first line here may be
+			//   incomplete, and it belongs to the previous part
+			while (!VCF_EOF() && (VCF_Position() < blk_first))
+				SkipLine();
 		}
 
 		while (!VCF_EOF() && (variant_index+1 < variant_start))
@@ -1382,11 +1560,19 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Parse(SEXP vcf_fn, SEXP header,
 		// =========================================================
 		// parse the context
 
-		// progress information
-		CProgress Progress(variant_count, progfile, false);
+		// progress information; when a range of the BGZF blocks is given, the
+		//   number of variants is unknown, so the progress is measured by the
+		//   compressed bytes of the blocks instead
+		const bool blk_prog = (blk_end > blk_first);
+		CProgress Progress(blk_prog ? (blk_end - blk_first) : variant_count,
+			progfile, false);
+		C_Int64 prog_addr = blk_first;  // the last reported block offset
 
 		while (!VCF_EOF())
 		{
+			// a line belongs to this part if it begins before 'blk_end'
+			if ((blk_end >= 0) && (VCF_Position() >= blk_end)) break;
+
 			// -----------------------------------------------------
 			// column 1: CHROM
 			GetText(FALSE);
@@ -1901,8 +2087,17 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Parse(SEXP vcf_fn, SEXP header,
 		#endif
 
 			// update progress
-			Progress.Forward();
+			if (blk_prog)
+			{
+				const C_Int64 a = VCF_Position();
+				if (a > prog_addr)
+					{ Progress.Forward(a - prog_addr); prog_addr = a; }
+			} else
+				Progress.Forward();
 		}
+		// the last block is not fully counted in the loop above
+		if (blk_prog && (prog_addr < blk_end))
+			Progress.Forward(blk_end - prog_addr);
 
 		// set returned value: levels(filter)
 		PROTECT(rv_ans = NEW_CHARACTER(filter_list.size()));
@@ -1925,6 +2120,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_VCF_Parse(SEXP vcf_fn, SEXP header,
 	#endif
 
 	CORE_CATCH({
+		VCF_Bgzf.Close();
 		char buf[4096];
 		if ((VCF_ColumnNum > 0) && (save_pBegin < save_pEnd))
 		{
