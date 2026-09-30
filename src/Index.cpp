@@ -20,6 +20,7 @@
 // If not, see <http://www.gnu.org/licenses/>.
 
 #include <cstdio>
+#include <algorithm>
 #include "Index.h"
 #include <sys/stat.h>
 
@@ -564,6 +565,63 @@ void CRangeSet::GetRanges(int Start[], int End[])
 // SeqArray GDS file information
 // ===========================================================
 
+// pack n bytes (FALSE or non-zero) to bits: byte i of src is stored in bit
+//     (i % 8) of dst[i / 8], and dst has (n+7)/8 bytes with zero padding bits
+static void pack_bits(const C_BOOL *src, size_t n, C_UInt8 *dst)
+{
+	for (; n >= 8; n -= 8, src += 8)
+	{
+		*dst++ = (src[0] != 0) | ((src[1] != 0) << 1) | ((src[2] != 0) << 2) |
+			((src[3] != 0) << 3) | ((src[4] != 0) << 4) | ((src[5] != 0) << 5) |
+			((src[6] != 0) << 6) | ((src[7] != 0) << 7);
+	}
+	if (n > 0)
+	{
+		C_UInt8 b = 0;
+		for (size_t i=0; i < n; i++)
+			if (src[i] != 0) b |= (1 << i);
+		*dst = b;
+	}
+}
+
+// unpack n bits (see pack_bits) to n bytes of TRUE or FALSE
+static void unpack_bits(const C_UInt8 *src, size_t n, C_BOOL *dst)
+{
+	for (; n >= 8; n -= 8, dst += 8)
+	{
+		C_UInt8 b = *src++;
+		dst[0] = b & 0x01; dst[1] = (b >> 1) & 0x01;
+		dst[2] = (b >> 2) & 0x01; dst[3] = (b >> 3) & 0x01;
+		dst[4] = (b >> 4) & 0x01; dst[5] = (b >> 5) & 0x01;
+		dst[6] = (b >> 6) & 0x01; dst[7] = (b >> 7) & 0x01;
+	}
+	if (n > 0)
+	{
+		C_UInt8 b = *src;
+		for (size_t i=0; i < n; i++)
+			dst[i] = (b >> i) & 0x01;
+	}
+}
+
+// return the index of the first non-zero bit in [start, n) of a bit vector
+//     (see pack_bits), or n if there is no non-zero bit
+static size_t find_true_bit(const C_UInt8 *bits, size_t start, size_t n)
+{
+	size_t i = start;
+	while (i < n)
+	{
+		C_UInt8 b = bits[i >> 3] >> (i & 0x07);
+		if (b)
+		{
+			while (!(b & 0x01)) { b >>= 1; i++; }
+			return (i < n) ? i : n;
+		}
+		i = (i | 0x07) + 1;  // the first bit of the next byte
+	}
+	return n;
+}
+
+
 TSelection::TSelection(CFileInfo &File, bool init)
 {
 	Link = NULL;
@@ -743,6 +801,44 @@ void TSelection::ClearStructVariant()
 	varStart = varEnd = 0;
 }
 
+void TSelection::Pack()
+{
+	if (IsPacked()) return;
+	// allocate first, so nothing is changed if it fails
+	bitSample.resize((numSamp + 7) / 8);
+	bitVariant.resize((numVar + 7) / 8);
+	pack_bits(pSample, numSamp, bitSample.data());
+	pack_bits(pVariant, numVar, bitVariant.data());
+	delete[] pSample; pSample = NULL;
+	delete[] pVariant; pVariant = NULL;
+}
+
+void TSelection::Unpack()
+{
+	if (!IsPacked()) return;
+	// allocate first, so nothing is changed if it fails
+	C_BOOL *s = new C_BOOL[numSamp];
+	C_BOOL *v = NULL;
+	try {
+		v = new C_BOOL[numVar];
+	} catch (...) {
+		delete[] s; throw;
+	}
+	unpack_bits(bitSample.data(), numSamp, s);
+	unpack_bits(bitVariant.data(), numVar, v);
+	pSample = s; pVariant = v;
+	// release the memory of bit vectors
+	vector<C_UInt8>().swap(bitSample);
+	vector<C_UInt8>().swap(bitVariant);
+}
+
+size_t TSelection::NextSelVariant(size_t start) const
+{
+	if (!IsPacked())
+		throw ErrSeqArray("Internal error: the selection is not packed.");
+	return find_true_bit(bitVariant.data(), start, numVar);
+}
+
 // TVarMap
 
 static const char *ERR_DIM = "Invalid dimension of '%s'.";
@@ -800,6 +896,163 @@ void TVarMap::get_obj(CFileInfo &file, const string &varnm)
 	IsBit1 = (strcmp(classname, "dBit1") == 0);
 }
 
+// CPositionCache
+
+/// the maximum number of positions in CPositionCache
+static const C_Int32 POS_CACHE_SIZE = 65536*2;
+
+CPositionCache::CPositionCache()
+{
+	_Node = NULL;
+	_NumVariant = _Start = _End = 0;
+}
+
+void CPositionCache::Reset(PdAbstractArray node, C_Int32 num_variant)
+{
+	_Node = node;
+	_NumVariant = num_variant;
+	_Start = _End = 0;
+	vector<C_Int32>().swap(_Buffer);
+	_MinMax.clear();
+}
+
+void CPositionCache::Read(C_Int32 start, C_Int32 len, const C_BOOL *sel,
+	C_Int32 *out)
+{
+	if (len <= 0) return;
+	if (len > POS_CACHE_SIZE)
+	{
+		// more than the cache size, slide the window forward over the selected
+		//     variants, so the GDS node is read forward and a gap is skipped
+		//     by seeking (no decompression of the unselected blocks)
+		for (; len > 0; len--, start++)
+			if (*sel++) *out++ = (*this)[start];
+	} else {
+		const C_Int32 *p = Positions(start, start + len);
+		for (; len > 0; len--, p++)
+			if (*sel++) *out++ = *p;
+	}
+}
+
+void CPositionCache::FindInRange(C_Int32 start, C_Int32 end, CRangeSet &rng,
+	const C_BOOL *sel, C_BOOL *flag)
+{
+	if ((start >= end) || (rng.Size() <= 0)) return;
+	// the ranges are sorted and not overlapping
+	const size_t nrng = rng.Size();
+	vector<int> rs(nrng), re(nrng);
+	rng.GetRanges(&rs[0], &re[0]);
+	while (start < end)
+	{
+		// the variants in [start, ed) are in the same chunk
+		const C_Int32 cst = (start / POS_CACHE_SIZE) * POS_CACHE_SIZE;
+		const C_Int32 ed = (end - cst > POS_CACHE_SIZE) ?
+			(cst + POS_CACHE_SIZE) : end;
+		// whether a range overlaps [minimum, maximum] of the variants
+		const TMinMax &mm = MinMax(start, ed);
+		vector<int>::const_iterator k =
+			std::lower_bound(re.begin(), re.end(), mm.Min);
+		bool flag_read = (k != re.end()) && (rs[k - re.begin()] <= mm.Max);
+		// whether there is a selected variant
+		if (flag_read && sel)
+			flag_read = (VEC_BOOL_FIND_TRUE(sel + start, sel + ed) < sel + ed);
+		if (flag_read)
+		{
+			const C_Int32 *p = Positions(start, ed);
+			if (mm.Sorted)
+			{
+				// positions in ascending order, move forward along the
+				//     positions and the ranges together (sorted and not
+				//     overlapping), the positions in each range are found
+				//     by binary search
+				const C_Int32 *pe = p + (ed - start), *pp = p;
+				for (size_t j=k-re.begin(); (j < nrng) && (pp < pe); j++)
+				{
+					pp = std::lower_bound(pp, pe, rs[j]);
+					const C_Int32 *q = std::upper_bound(pp, pe, re[j]);
+					for (C_Int32 i=start+(pp-p); pp < q; pp++, i++)
+						if (!sel || sel[i]) flag[i] = TRUE;
+				}
+			} else if (nrng == 1)
+			{
+				// only one range, optimized for this situation
+				const int st = rs[0], et = re[0];
+				for (C_Int32 i=start; i < ed; i++, p++)
+					if ((!sel || sel[i]) && (st <= *p) && (*p <= et))
+						flag[i] = TRUE;
+			} else {
+				for (C_Int32 i=start; i < ed; i++, p++)
+					if ((!sel || sel[i]) && rng.IsIncluded(*p))
+						flag[i] = TRUE;
+			}
+		}
+		start = ed;
+	}
+}
+
+void CPositionCache::Load(C_Int32 st, C_Int32 ed)
+{
+	if (!_Node)
+		throw ErrSeqArray("CPositionCache should be initialized.");
+	if ((st < 0) || (st >= ed) || (ed > _NumVariant) ||
+			(ed - st > POS_CACHE_SIZE))
+		throw ErrSeqArray("Invalid variant index in reading positions.");
+	// the new window is [st, new_end): read ahead up to the cache size if the
+	//     variants are accessed forward, otherwise (e.g., a random access)
+	//     only read the requested positions
+	C_Int32 new_end = ed;
+	if ((_Start < _End) && (_Start <= st) && (st - _End <= POS_CACHE_SIZE))
+	{
+		new_end = (_NumVariant - st > POS_CACHE_SIZE) ?
+			(st + POS_CACHE_SIZE) : _NumVariant;
+	}
+	if (_Buffer.empty())
+	{
+		_Buffer.resize((_NumVariant > POS_CACHE_SIZE) ?
+			POS_CACHE_SIZE : _NumVariant);
+	}
+	// keep the cached positions from 'st', so that the node is read forward
+	C_Int32 keep = 0;
+	if ((_Start <= st) && (st < _End))
+	{
+		keep = _End - st;
+		memmove(&_Buffer[0], &_Buffer[st - _Start], sizeof(C_Int32)*keep);
+	}
+	_Start = _End = 0;  // invalid in case of a failure in reading
+	C_Int32 rd_st = st + keep, rd_len = new_end - rd_st;
+	if (rd_len > 0)
+		GDS_Array_ReadData(_Node, &rd_st, &rd_len, &_Buffer[keep], svInt32);
+	_Start = st; _End = new_end;
+}
+
+const C_Int32 *CPositionCache::Positions(C_Int32 st, C_Int32 ed)
+{
+	if ((st < _Start) || (ed > _End))
+		Load(st, ed);
+	return &_Buffer[st - _Start];
+}
+
+const CPositionCache::TMinMax &CPositionCache::MinMax(C_Int32 st, C_Int32 ed)
+{
+	TMinMax &v = _MinMax[st];  // End = 0 if it is new
+	if (v.End != ed)
+	{
+		v.End = 0;  // invalid in case of a failure in reading
+		const C_Int32 *p = Positions(st, ed);
+		C_Int32 v1 = p[0], v2 = p[0];
+		bool sorted = true;
+		for (C_Int32 i=1, n=ed-st; i < n; i++)
+		{
+			if (p[i] < v1) v1 = p[i];
+			if (p[i] > v2) v2 = p[i];
+			if (p[i] < p[i-1]) sorted = false;
+		}
+		v.Min = v1; v.Max = v2; v.Sorted = sorted; v.End = ed;
+	}
+	return v;
+}
+
+
 // CFileInfo
 
 CFileInfo::CFileInfo(PdGDSFolder root)
@@ -836,7 +1089,7 @@ void CFileInfo::ResetRoot(PdGDSFolder root)
 		_File = GDS_Node_File(root);
 		_Root = root;
 		_Chrom.Clear();
-		_Position.clear();
+		_PosCache.Reset(NULL, 0);
 		clear_selection();
 
 		// sample.id
@@ -882,11 +1135,18 @@ TSelection &CFileInfo::Selection()
 TSelection &CFileInfo::Push_Selection(bool init_samp, bool init_var)
 {
 	TSelection *n = new TSelection(*this, false);
+	try {
+		if (init_samp)
+			memcpy(n->pSample, _SelList->pSample, _SampleNum);
+		if (init_var)
+			memcpy(n->pVariant, _SelList->pVariant, _VariantNum);
+		// pack the current selection into bit vectors to save memory, since
+		// it is not used until popped back
+		_SelList->Pack();
+	} catch (...) {
+		delete n; throw;
+	}
 	n->Link = _SelList;
-	if (init_samp)
-		memcpy(n->pSample, _SelList->pSample, _SampleNum);
-	if (init_var)
-		memcpy(n->pVariant, _SelList->pVariant, _VariantNum);
 	_SelList = n;
 	return *n;
 }
@@ -896,6 +1156,8 @@ void CFileInfo::Pop_Selection()
 	if (_SelList==NULL || _SelList->Link==NULL)
 		throw ErrSeqArray("No filter can be pop up.");
 	TSelection *n = _SelList;
+	// unpack the previous selection before it becomes the current one
+	n->Link->Unpack();
 	_SelList = n->Link;
 	delete n;
 }
@@ -916,30 +1178,29 @@ void CFileInfo::ResetChromosome()
 	_Chrom.Clear();
 }
 
-vector<C_Int32> &CFileInfo::Position()
+void CFileInfo::ResetPosition()
 {
 	if (!_Root)
 		throw ErrSeqArray(ERR_FILE_ROOT);
-	if (_Position.empty())
-	{
-		PdAbstractArray N = GetObj("position", TRUE);
-		// check
-		if ((GDS_Array_DimCnt(N) != 1) ||
-				(GDS_Array_GetTotalCount(N) != _VariantNum))
-			throw ErrSeqArray(ERR_DIM, "position");
-		// read
-		_Position.resize(_VariantNum);
-		GDS_Array_ReadData(N, NULL, NULL, &_Position[0], svInt32);
-	}
-	return _Position;
+	_PosCache.Reset(NULL, 0);
 }
 
-void CFileInfo::ClearPosition()
+PdAbstractArray CFileInfo::PositionObj()
 {
-	if (!_Root)
-		throw ErrSeqArray(ERR_FILE_ROOT);
-	_Position.clear();
-	std::vector<C_Int32>().swap(_Position);
+	PdAbstractArray N = GetObj("position", TRUE);
+	if ((GDS_Array_DimCnt(N) != 1) ||
+			(GDS_Array_GetTotalCount(N) != _VariantNum))
+		throw ErrSeqArray(ERR_DIM, "position");
+	return N;
+}
+
+CPositionCache &CFileInfo::PositionCache()
+{
+	// find the node each time, and reset the cache if the node is replaced
+	PdAbstractArray N = PositionObj();
+	if (N != _PosCache.Node())
+		_PosCache.Reset(N, _VariantNum);
+	return _PosCache;
 }
 
 CGenoIndex &CFileInfo::GenoIndex()

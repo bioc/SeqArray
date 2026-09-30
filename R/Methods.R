@@ -373,10 +373,12 @@ seqSetFilterPos <- function(object, chr, pos, ref=NULL, alt=NULL,
     # for-loop each chromosome
     dd <- lapply(chr_lst, function(chr1)
     {
-        # subset of input set, sorted by position
-        if (length(chr)==1L)
+        # subset of input set, sorted by position; NULL if it is 1:length(pos),
+        #     i.e., all the positions are on the chromosome and in ascending
+        #     order, so that no order index is created
+        if (length(chr)==1L || length(chr_lst)==1L)
         {
-            i_sub <- order(pos)
+            i_sub <- if (isFALSE(is.unsorted(pos))) NULL else order(pos)
         } else {
             # NA chromosome entries never match any variant, but keep their
             # indices so that ret.idx can be aligned with the query
@@ -392,14 +394,15 @@ seqSetFilterPos <- function(object, chr, pos, ref=NULL, alt=NULL,
             }
         }
         # set filter on chromosome first
-        seqSetFilterChrom(object, chr1,
-            from.bp=pos[i_sub[1L]], to.bp=pos[i_sub[length(i_sub)]],
+        rg <- if (is.null(i_sub)) pos[c(1L, length(pos))] else
+            pos[i_sub[c(1L, length(i_sub))]]
+        seqSetFilterChrom(object, chr1, from.bp=rg[1L], to.bp=rg[2L],
             intersect=intersect, verbose=FALSE)
         # gds variant position and index
         p1 <- seqGetData(object, "position")
         i1 <- seqGetData(object, "$variant_index")
-        # match
-        ord1 <- order(p1)
+        # match, no need to order the positions if they are in ascending order
+        ord1 <- if (isFALSE(is.unsorted(p1))) NULL else order(p1)
         .Call(SEQ_FindMatchIndex, pos, ref, alt, i_sub, p1, i1, ord1,
             node, multi.pos)
     })
@@ -428,7 +431,8 @@ seqSetFilterPos <- function(object, chr, pos, ref=NULL, alt=NULL,
     # output
     if (isTRUE(ret.idx))
     {
-        i1 <- dd$i1[order(dd$i0)]
+        # dd$i0 is NULL if the query positions are in ascending order
+        i1 <- if (is.null(dd$i0)) dd$i1 else dd$i1[order(dd$i0)]
         match(i1, seqGetData(object, "$variant_index"))
     } else {
         invisible()
@@ -496,13 +500,11 @@ seqSetFilterAnnotID <- function(object, id, ret.idx=FALSE, verbose=TRUE)
     stopifnot(inherits(object, "SeqVarGDSClass"))
     stopifnot(is.character(id))
     stopifnot(is.logical(ret.idx), length(ret.idx)==1L)
-    # call C function
-    .Call(SEQ_SetSpaceAnnotID, object, id, verbose)
+    # call C function, return match(id, seqGetData(object, "annotation/id"))
+    #   if ret.idx=TRUE (NA is treated as FALSE)
+    rv <- .Call(SEQ_SetSpaceAnnotID, object, id, ret.idx, verbose)
     # output
-    if (ret.idx)
-        match(id, seqGetData(object, "annotation/id"))
-    else
-        invisible()
+    if (isTRUE(ret.idx)) rv else invisible()
 }
 
 
@@ -611,7 +613,8 @@ seqApply <- function(gdsfile, var.name, FUN,
     margin=c("by.variant", "by.sample"),
     as.is=c("none", "list", "integer", "double", "character", "logical", "raw"),
     var.index=c("none", "relative", "absolute"), parallel=FALSE,
-    .useraw=FALSE, .progress=FALSE, .list_dup=TRUE, .balancing=FALSE, ...)
+    .useraw=FALSE, .progress=FALSE, .list_dup=TRUE, .balancing=FALSE,
+    .package=NULL, ...)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass") || is.character(gdsfile))
@@ -624,6 +627,7 @@ seqApply <- function(gdsfile, var.name, FUN,
     stopifnot(is.logical(.progress) || is.character(.progress),
         length(.progress)==1L)
     stopifnot(is.logical(.balancing), length(.balancing)==1L)
+    stopifnot(is.null(.package) || is.character(.package))
 
     # gds file
     if (is.character(gdsfile))
@@ -666,6 +670,7 @@ seqApply <- function(gdsfile, var.name, FUN,
         if ((njobs <= 1L) || (dm[3L] <= 0L))
         {
             # C call, by.variant
+            .load_package(.package)
             rv <- .Call(SEQ_Apply_Variant, gdsfile, var.name, FUN, as.is,
                 var.index, param, new.env())
         } else {
@@ -673,6 +678,7 @@ seqApply <- function(gdsfile, var.name, FUN,
             rv <- seqParallel(parallel, gdsfile, FUN = .seq_apply_var_fc,
                 split=margin, .balancing=.balancing,
                 .status_file=param$progress, .proc_time=param$progress,
+                .package=.package,
                 .vn=var.name, .FUN=FUN, .as.is=as.is, .varidx=var.index,
                 .param=param, ...)
         }
@@ -680,6 +686,7 @@ seqApply <- function(gdsfile, var.name, FUN,
         if ((njobs <= 1L) || (dm[2L] <= 0L))
         {
             # C call, by.sample
+            .load_package(.package)
             rv <- .Call(SEQ_Apply_Sample, gdsfile, var.name, FUN, as.is,
                 var.index, param, new.env())
         } else {
@@ -687,6 +694,7 @@ seqApply <- function(gdsfile, var.name, FUN,
             rv <- seqParallel(parallel, gdsfile, FUN = .seq_apply_samp_fc,
                 split=margin, .balancing=.balancing,
                 .status_file=param$progress, .proc_time=param$progress,
+                .package=.package,
                 .vn=var.name, .FUN=FUN, .as.is=as.is, .varidx=var.index,
                 .param=param, ...)
         }
@@ -707,7 +715,7 @@ seqBlockApply <- function(gdsfile, var.name, FUN, margin=c("by.variant"),
     as.is=c("none", "list", "unlist"),
     var.index=c("none", "relative", "absolute"), bsize=1024L, parallel=FALSE,
     .useraw=FALSE, .padNA=TRUE, .tolist=FALSE, .balancing=FALSE,
-    .progress=FALSE, ...)
+    .progress=FALSE, .package=NULL, ...)
 {
     # check
     stopifnot(inherits(gdsfile, "SeqVarGDSClass") || is.character(gdsfile))
@@ -721,6 +729,7 @@ seqBlockApply <- function(gdsfile, var.name, FUN, margin=c("by.variant"),
     stopifnot(is.logical(.tolist), length(.tolist)==1L)
     stopifnot(is.logical(.balancing), length(.balancing)==1L)
     stopifnot(is.logical(.progress), length(.progress)==1L)
+    stopifnot(is.null(.package) || is.character(.package))
 
     parallel <- .McoreParallel(parallel)
     njobs <- .NumParallel(parallel)
@@ -747,6 +756,7 @@ seqBlockApply <- function(gdsfile, var.name, FUN, margin=c("by.variant"),
         {
             # initialize
             .init_proc()
+            .load_package(.package)
             on.exit(seqFilterPop(gdsfile))  # in case if it fails
             # C call, blocking by variant
             rv <- .Call(SEQ_BApply_Variant, gdsfile, var.name, FUN, as.is,
@@ -771,6 +781,7 @@ seqBlockApply <- function(gdsfile, var.name, FUN, margin=c("by.variant"),
                     .Call(SEQ_BApply_Variant, .gds, .vn, .FUN, .as.is,
                         .varidx, .param, new.env())
                 }, split=margin, .balancing=.balancing, .proc_time=.progress,
+                    .package=.package,
                     .vn=var.name, .FUN=FUN, .as.is=as.is, .varidx=var.index,
                     .param=param, ...)
         }

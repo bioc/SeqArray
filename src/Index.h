@@ -330,8 +330,8 @@ struct COREARRAY_DLL_LOCAL TSelection
 	};
 
 	TSelection *Link;  ///< the pointer to the last one
-	C_BOOL *pSample;   ///< sample selection
-	C_BOOL *pVariant;  ///< variant selection
+	C_BOOL *pSample;   ///< sample selection, NULL if packed in bitSample
+	C_BOOL *pVariant;  ///< variant selection, NULL if packed in bitVariant
 
 	ssize_t varTrueNum;  ///< the number of TRUEs in pVariant, -1 for requiring initialization
 	ssize_t varStart;    ///< the start position of the first TRUE in pVariant
@@ -354,12 +354,27 @@ struct COREARRAY_DLL_LOCAL TSelection
 	/// clear the structure of selected variants for resetting the variant filter
 	void ClearStructVariant();
 
+	/// pack pSample and pVariant into bit vectors to save memory when the
+	///     selection is pushed to the stack (pSample and pVariant are NULL
+	///     after packing, and the selection should not be used until unpacked)
+	void Pack();
+	/// unpack the bit vectors to pSample and pVariant, when the selection is
+	///     popped from the stack
+	void Unpack();
+	/// return true if the selection is packed in bit vectors
+	inline bool IsPacked() const { return pVariant == NULL; }
+	/// return the index of the first selected variant in [start, numVar) of
+	///     a packed selection, or numVar if there is no selected variant
+	size_t NextSelVariant(size_t start) const;
+
 private:
 	size_t numSamp;    ///< the total number of samples
 	size_t numVar;     ///< the total number of variants
 	size_t numPloidy;  ///< the ploidy
 	C_BOOL *pFlagGenoSel;  ///< the pointer to the genotype selection according to the selected samples
 	vector<TSampStruct> pSampList;
+	vector<C_UInt8> bitSample;   ///< packed sample selection, (numSamp+7)/8 bytes
+	vector<C_UInt8> bitVariant;  ///< packed variant selection, (numVar+7)/8 bytes
 };
 
 
@@ -390,6 +405,56 @@ private:
 };
 
 
+/// The positions of consecutive variants cached in a sliding window, instead
+///     of loading the positions of all variants into memory; it is efficient
+///     when the variant index increases, since the GDS node is read forward
+class COREARRAY_DLL_LOCAL CPositionCache
+{
+public:
+	/// constructor
+	CPositionCache();
+	/// reset with the GDS node 'position', and clear the cached positions
+	void Reset(PdAbstractArray node, C_Int32 num_variant);
+	/// the GDS node 'position'
+	inline PdAbstractArray Node() const { return _Node; }
+	/// return the position of the variant with index 'idx' (starting from 0)
+	inline C_Int32 operator[](C_Int32 idx)
+	{
+		if ((idx < _Start) || (idx >= _End)) Load(idx, idx+1);
+		return _Buffer[idx - _Start];
+	}
+	/// read the positions of selected variants in [start, start+len) to 'out'
+	void Read(C_Int32 start, C_Int32 len, const C_BOOL *sel, C_Int32 *out);
+	/// set flag[i]=TRUE for the variants in [start, end) (e.g., a run of the
+	///     same chromosome) with positions in 'rng', only if sel[i]=TRUE when
+	///     'sel' is not NULL; the minimum and maximum positions of each piece
+	///     of [start, end) in a chunk of variants are kept, so a piece is
+	///     skipped without reading if no position in it can be in 'rng';
+	///     in a piece with positions in ascending order, the variants in
+	///     each range are found by binary search
+	void FindInRange(C_Int32 start, C_Int32 end, CRangeSet &rng,
+		const C_BOOL *sel, C_BOOL *flag);
+
+private:
+	/// the minimum and maximum positions of variants in [start, End), and
+	///     whether the positions are in ascending order
+	struct TMinMax { C_Int32 End, Min, Max; bool Sorted; };
+
+	PdAbstractArray _Node;    ///< the GDS node 'position'
+	C_Int32 _NumVariant;      ///< the total number of variants
+	C_Int32 _Start;           ///< the variant index of _Buffer[0]
+	C_Int32 _End;             ///< the cached variants are in [_Start, _End)
+	vector<C_Int32> _Buffer;  ///< the cached positions
+	map<C_Int32, TMinMax> _MinMax;  ///< start ==> minimum and maximum positions
+	/// cache the positions of variants in [st, ed)
+	void Load(C_Int32 st, C_Int32 ed);
+	/// return the positions of variants in [st, ed), valid until next loading
+	const C_Int32 *Positions(C_Int32 st, C_Int32 ed);
+	/// return the minimum and maximum positions of variants in [st, ed)
+	const TMinMax &MinMax(C_Int32 st, C_Int32 ed);
+};
+
+
 /// GDS file object
 class COREARRAY_DLL_LOCAL CFileInfo
 {
@@ -415,10 +480,12 @@ public:
 	CChromIndex &Chromosome();
 	/// reload chromosome coding when it is changed
 	void ResetChromosome();
-	/// return _Position which has been initialized
-	vector<C_Int32> &Position();
-	/// clear the buffer for variant positions
-	void ClearPosition();
+	/// return the GDS node 'position' after checking its dimension
+	PdAbstractArray PositionObj();
+	/// return the positions cached in a sliding window
+	CPositionCache &PositionCache();
+	/// clear the cached positions when 'position' is changed
+	void ResetPosition();
 
 	/// return _GenoIndex which has been initialized
 	CGenoIndex &GenoIndex();
@@ -454,7 +521,7 @@ protected:
 	int _Ploidy;      ///< ploidy
 
 	CChromIndex _Chrom;  ///< chromosome indexing
-	vector<C_Int32> _Position;  ///< position
+	CPositionCache _PosCache;   ///< positions cached in a sliding window
 	CGenoIndex _GenoIndex;  ///< the indexing object for genotypes
 	map<string, TVarMap> _VarMap;  ///< the indexing objects for seqGetData()
 

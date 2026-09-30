@@ -779,9 +779,11 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceChrom(SEXP gdsfile, SEXP include,
 
 		} else {
 			// include != NULL
-			vector<C_Int32> *varPos = NULL;
+			// with from.bp and to.bp, the positions are read from the GDS node
+			//     via a cache, instead of loading the positions of all variants
+			CPositionCache *PosCache = NULL;
 			if (pFrom && pTo)
-				varPos = &File.Position();
+				PosCache = &File.PositionCache();
 
 			CChromIndex &Chrom = File.Chromosome();
 			map<string, CRangeSet> RngSets;  // Chromosome ==> CRangeSet
@@ -802,7 +804,7 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceChrom(SEXP gdsfile, SEXP include,
 					Chrom.Map.find(s);
 				if (it != Chrom.Map.end())
 				{
-					if (varPos)
+					if (PosCache)
 					{
 						// if specify from.bp and to.bp
 						int from = pFrom[idx], to = pTo[idx];
@@ -821,47 +823,18 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceChrom(SEXP gdsfile, SEXP include,
 				}
 			}
 
-			if (varPos)
+			if (PosCache)
 			{
 				// Chromosome ==> CRangeSet
 				map<string, CRangeSet>::iterator it;
 				for (it=RngSets.begin(); it != RngSets.end(); it++)
 				{
 					CChromIndex::TRangeList &rng = Chrom.Map[it->first];
-					CRangeSet &RngSet = it->second;
 					vector<CChromIndex::TRange>::const_iterator p;
 					for (p=rng.begin(); p != rng.end(); p++)
 					{
-						size_t i=p->Start, n=p->Length;
-						C_Int32 *s = &((*varPos)[0]) + i;
-						if (RngSet.Size() == 1)
-						{
-							// there is only a range, optimized for this situation
-							int st, ed;
-							RngSet.GetRanges(&st, &ed);
-							if (!IsIntersect)
-							{
-								for (; n > 0; n--, i++, s++)
-									if (st<=*s && *s<=ed) array[i] = TRUE;
-							} else {
-								C_BOOL *b = &sel_array[i];
-								for (; n > 0; n--, i++, s++)
-									if (*b++ && st<=*s && *s<=ed) array[i] = TRUE;
-							}
-						} else {
-							if (!IsIntersect)
-							{
-								for (; n > 0; n--, i++)
-									if (RngSet.IsIncluded(*s++)) array[i] = TRUE;
-							} else {
-								C_BOOL *b = &sel_array[i];
-								for (; n > 0; n--, i++, s++)
-								{
-									if (*b++)
-										if (RngSet.IsIncluded(*s)) array[i] = TRUE;
-								}
-							}
-						}
+						PosCache->FindInRange(p->Start, p->Start + p->Length,
+							it->second, IsIntersect ? sel_array : NULL, array);
 					}
 				}
 			}
@@ -885,12 +858,18 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceChrom(SEXP gdsfile, SEXP include,
 
 // ================================================================
 
+inline static bool str_less(const char *a, const char *b)
+	{ return strcmp(a, b) < 0; }
+
 /// set a working space flag with selected annotation id
-COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceAnnotID(SEXP gdsfile, SEXP ID, SEXP Verbose)
+COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceAnnotID(SEXP gdsfile, SEXP ID, SEXP RetIdx,
+	SEXP Verbose)
 {
 	static const char *ERR_DIM = "Invalid dimension of '%s'.";
 	static const char *VarName = "annotation/id";
 
+	// ret.idx=NA is treated as FALSE
+	const bool ret_idx = (Rf_asLogical(RetIdx) == TRUE);
 	int verbose = Rf_asLogical(Verbose);
 	if (verbose == NA_LOGICAL)
 		Rf_error("'verbose' must be TRUE or FALSE.");
@@ -910,14 +889,27 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceAnnotID(SEXP gdsfile, SEXP ID, SEXP Verbos
 			throw ErrSeqArray(ERR_DIM, VarName);
 
 		TSelection &Sel = File.Selection();
-		set<string> id_set;
+		// sorted IDs, pointing to the strings in ID without copying
+		vector<const char*> id_lst;
 		const size_t n = XLENGTH(ID);
+		id_lst.reserve(n);
 		for (size_t i=0; i < n; i++)
 		{
 			SEXP s = STRING_ELT(ID, i);
-			if ((s != NA_STRING) && (CHAR(s) != 0))
-				id_set.insert(CHAR(s));
+			if (s == NA_STRING) continue;
+			const char *p = CHAR(s);
+			// skip missing IDs: "" or "."
+			if ((p[0] != 0) && !(p[0] == '.' && p[1] == 0))
+				id_lst.push_back(p);
 		}
+		sort(id_lst.begin(), id_lst.end(), str_less);
+		typedef vector<const char*>::iterator TIter;
+		const TIter it_st = id_lst.begin(), it_ed = id_lst.end();
+
+		// if ret.idx, the first matching index among the selected variants
+		//   for each sorted ID (0 for no match)
+		vector<C_Int32> first_idx(ret_idx ? id_lst.size() : 0, 0);
+		C_Int32 num_sel = 0;
 
 		const int SIZE = 4096;
 		C_BOOL *p = Sel.pVariant;
@@ -926,14 +918,55 @@ COREARRAY_DLL_EXPORT SEXP SEQ_SetSpaceAnnotID(SEXP gdsfile, SEXP ID, SEXP Verbos
 		{
 			C_Int32 m = (len <= SIZE) ? len : SIZE;
 			GDS_Array_ReadData(N, &st, &m, &buffer[0], svStrUTF8);
-			for (C_Int32 i=0; i < m; i++)
-				*p++ = (id_set.find(buffer[i]) != id_set.end());
+			if (ret_idx)
+			{
+				for (C_Int32 i=0; i < m; i++)
+				{
+					const char *s = buffer[i].c_str();
+					TIter it = lower_bound(it_st, it_ed, s, str_less);
+					const bool found = (it != it_ed) && !str_less(s, *it);
+					*p++ = found;
+					if (found)
+					{
+						num_sel ++;
+						C_Int32 &v = first_idx[it - it_st];
+						if (v == 0) v = num_sel;
+					}
+				}
+			} else {
+				for (C_Int32 i=0; i < m; i++)
+				{
+					*p++ = binary_search(it_st, it_ed, buffer[i].c_str(),
+						str_less);
+				}
+			}
 			st += m; len -= m;
 		}
 
 		Sel.varTrueNum = -1;
 		if (verbose)
 			Rprintf(INFO_SEL_NUM_VARIANT, PrettyInt(File.VariantSelNum()));
+
+		// output, the same as match(ID, seqGetData(, "annotation/id"))
+		if (ret_idx)
+		{
+			PROTECT(rv_ans = NEW_INTEGER(n));
+			int *pv = INTEGER(rv_ans);
+			for (size_t i=0; i < n; i++)
+			{
+				SEXP s = STRING_ELT(ID, i);
+				pv[i] = NA_INTEGER;
+				if (s == NA_STRING) continue;
+				const char *ss = CHAR(s);
+				TIter it = lower_bound(it_st, it_ed, ss, str_less);
+				if ((it != it_ed) && !str_less(ss, *it))
+				{
+					C_Int32 v = first_idx[it - it_st];
+					if (v > 0) pv[i] = v;
+				}
+			}
+			UNPROTECT(1);
+		}
 
 	COREARRAY_CATCH
 }
@@ -1281,6 +1314,15 @@ COREARRAY_DLL_EXPORT SEXP SEQ_ResetChrom(SEXP gdsfile)
 	COREARRAY_CATCH
 }
 
+/// clear the cached positions when 'position' is changed
+COREARRAY_DLL_EXPORT SEXP SEQ_ResetPosition(SEXP gdsfile)
+{
+	COREARRAY_TRY
+		CFileInfo &File = GetFileInfo(gdsfile);
+		File.ResetPosition();
+	COREARRAY_CATCH
+}
+
 
 
 // ===========================================================
@@ -1399,30 +1441,6 @@ COREARRAY_DLL_EXPORT SEXP SEQ_ClearVarMap(SEXP gdsfile)
 		File.VarMap().clear();
 	COREARRAY_CATCH
 }
-
-
-
-// ===========================================================
-// Get or clear the memory buffer storing variant positions
-// ===========================================================
-
-COREARRAY_DLL_EXPORT SEXP SEQ_BufferPosition(SEXP gdsfile, SEXP clear)
-{
-	int clear_flag = Rf_asLogical(clear);
-	COREARRAY_TRY
-		CFileInfo &File = GetFileInfo(gdsfile);
-		if (clear_flag == 1)  // TRUE
-		{
-			File.ClearPosition();
-			rv_ans = R_NilValue;
-		} else {
-			vector<C_Int32> &pos = File.Position();
-			SEXP n = Rf_ScalarInteger(pos.size());  // # of positions
-			rv_ans = R_MakeExternalPtr(&pos[0], R_NilValue, n);
-		}
-	COREARRAY_CATCH
-}
-
 
 
 // ===========================================================
@@ -1795,7 +1813,7 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 		CALL(SEQ_SetSpaceSample, 4),        CALL(SEQ_SetSpaceSample2, 5),
 		CALL(SEQ_SetSpaceVariant, 4),       CALL(SEQ_SetSpaceVariant2, 5),
 		CALL(SEQ_GetSortedIndex, 2),
-		CALL(SEQ_SetSpaceChrom, 7),         CALL(SEQ_SetSpaceAnnotID, 3),
+		CALL(SEQ_SetSpaceChrom, 7),         CALL(SEQ_SetSpaceAnnotID, 4),
 
 		CALL(SEQ_SplitSelection, 5),        CALL(SEQ_SplitSelectionX, 9),
 		CALL(SEQ_GetSpace, 2),
@@ -1810,10 +1828,11 @@ COREARRAY_DLL_EXPORT void R_init_SeqArray(DllInfo *info)
 
 		CALL(SEQ_ConvBED2GDS, 6),
 		CALL(SEQ_SelectFlag, 2),            CALL(SEQ_ResetChrom, 1),
+		CALL(SEQ_ResetPosition, 1),
 
 		CALL(SEQ_SetProcess, 3),            CALL(SEQ_SetProcessBlock, 2),
 		CALL(SEQ_AppendFill, 3),
-		CALL(SEQ_ClearVarMap, 1),           CALL(SEQ_BufferPosition, 2),
+		CALL(SEQ_ClearVarMap, 1),
 
 		CALL(SEQ_bgzip_create, 1),        CALL(SEQ_bgzip_is, 1),
 		CALL(SEQ_bgzip_index, 2),         CALL(SEQ_bgzip_split, 2),
