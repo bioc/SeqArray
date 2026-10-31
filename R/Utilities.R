@@ -91,19 +91,31 @@ seqParallelSetup <- function(cluster=TRUE, verbose=TRUE)
 {
     # check
     stopifnot(is.null(cluster) || is.logical(cluster) ||
-        is.numeric(cluster) || inherits(cluster, "cluster"))
+        is.numeric(cluster) || inherits(cluster, "cluster") ||
+        inherits(cluster, "BiocParallelParam"))
     stopifnot(is.logical(verbose), length(verbose)==1L)
     if (is.na(verbose)) verbose <- FALSE
 
     if (is.null(cluster) || isFALSE(cluster))
     {
         cl <- .PkgEnv$seqarray.parallel
+        .PkgEnv$seqarray.parallel <- NULL
         if (inherits(cl, "cluster"))
         {
-            .PkgEnv$seqarray.parallel <- NULL
             stopCluster(cl)
             if (verbose)
                 cat("Stop the computing cluster.\n")
+        } else if (inherits(cl, "BiocParallelParam"))
+        {
+            # the workers are running only if they are started by the user
+            if (BiocParallel::bpisup(cl))
+            {
+                BiocParallel::bpstop(cl)
+                # DoparParam is still up, since the foreach backend is not
+                #   stopped by bpstop()
+                if (verbose && !BiocParallel::bpisup(cl))
+                    cat("Stop the computing cluster.\n")
+            }
         }
         return(invisible())
     }
@@ -602,14 +614,6 @@ seqStorageOption <- function(compression=c("ZIP_RA", "ZIP_RA.fast",
     # number of nodes
     stopifnot(inherits(cl, "cluster"))
     njobs <- length(cl)
-    # status files
-    st_fname <- NULL
-    if (isTRUE(.status_file))
-    {
-        st_fname <- .get_status_filename(njobs)
-        file.create(st_fname, showWarnings=FALSE)
-        on.exit(unlink(st_fname, force=TRUE))
-    }
 
     if (split %in% c("by.variant", "by.sample"))
     {
@@ -621,11 +625,25 @@ seqStorageOption <- function(compression=c("ZIP_RA", "ZIP_RA.fast",
         } else {
             if (njobs > dm[2L]) cl <- cl[1L:dm[2L]]
         }
+        # no more jobs than the selected variants or samples
+        njobs <- length(cl)
+    }
+    # the selection used in the child processes (also for split="none")
+    if (inherits(gdsfile, "SeqVarGDSClass"))
+    {
         sel <- seqGetFilter(gdsfile, .useraw=TRUE)
         sel$sample.sel <- .compress(sel$sample.sel)
         sel$variant.sel <- .compress(sel$variant.sel)
     } else {
         sel <- list(sample.sel=raw(), variant.sel=raw())
+    }
+    # status files
+    st_fname <- NULL
+    if (isTRUE(.status_file))
+    {
+        st_fname <- .get_status_filename(njobs)
+        file.create(st_fname, showWarnings=FALSE)
+        on.exit(unlink(st_fname, force=TRUE))
     }
 
     # call the user-defined function
@@ -687,7 +705,7 @@ seqStorageOption <- function(compression=c("ZIP_RA", "ZIP_RA.fast",
         on.exit({
             clusterApply(cl, seq_len(njobs), fun=.fc_parallel_finalizer,
                 fc=.finalize, param=.initparam)
-        })
+        }, add=TRUE)
 
         # do parallel
         ans <- .DynamicClusterCall(cl, v$nblock,
@@ -837,79 +855,267 @@ seqStorageOption <- function(compression=c("ZIP_RA", "ZIP_RA.fast",
 
 ####  Run with BiocParallel  ####
 
-# combine results from bplapply
-.bp_combine_results <- function(ans, .combine)
+# call .dofun(i, ...) for i in 1:.num with a BiocParallelParam object, like
+#   .DynamicClusterCall(): the jobs are sent to the workers one by one, and
+#   the results are combined by .combinefun once they are received
+.bp_dynamic_call <- function(cl, .num, .dofun, .combinefun, .updatefun=NULL,
+    ...)
 {
-    if (identical(.combine, "none"))
+    argone <- FALSE
+    if (is.function(.combinefun))
+        argone <- length(formals(args(.combinefun))) == 1L
+    if (identical(.combinefun, "unlist") | identical(.combinefun, "list"))
+        ans <- vector("list", .num)
+    else
+        ans <- NULL
+
+    # the number of received results
+    k <- 0L
+    # the error in .combinefun or .updatefun, which is raised after all
+    #   running jobs are done, since an error in bpiterate(REDUCE=) would leave
+    #   their results to the next call on 'cl'
+    err <- NULL
+    # combine a result d = list(job index, value)
+    reduce <- function(x, d)
     {
-        return(invisible())
-    } else if (identical(.combine, "unlist"))
-    {
-        return(unlist(ans, recursive=FALSE))
-    } else if (identical(.combine, "list"))
-    {
-        return(ans)
-    } else if (is.function(.combine))
-    {
-        if (length(formals(args(.combine))) == 1L)
-        {
-            for (v in ans) .combine(v)
-            return(invisible())
-        } else {
-            return(Reduce(.combine, ans))
-        }
+        if (!is.null(err)) return(NULL)
+        err <<- tryCatch({
+            dv <- d[[2L]]
+            if (is.function(.combinefun))
+            {
+                if (argone)
+                {
+                    .combinefun(dv)
+                } else {
+                    if (is.null(ans))
+                        ans <<- dv
+                    else
+                        ans <<- .combinefun(ans, dv)
+                }
+            } else if (.combinefun %in% c("unlist", "list"))
+            {
+                # assignment NULL would remove it from the list
+                if (!is.null(dv)) ans[[d[[1L]]]] <<- dv
+            }
+            k <<- k + 1L
+            if (is.function(.updatefun)) .updatefun(k)
+            NULL
+        }, error = function(e) e)
+        NULL
     }
+
+    if (inherits(cl, "DoparParam"))
+    {
+        # bpiterate() is not supported, so combine after all jobs are done
+        v <- BiocParallel::bplapply(seq_len(.num), .bp_tag, .dofun=.dofun,
+            ..., BPPARAM=cl)
+        for (d in v) reduce(NULL, d)
+    } else {
+        # the job index, no new job after an error
+        i <- 0L
+        iter <- function() if (is.null(err) && i < .num) (i <<- i + 1L)
+        BiocParallel::bpiterate(iter, .bp_tag, .dofun=.dofun, ...,
+            REDUCE=reduce, init=NULL, BPPARAM=cl)
+    }
+    if (!is.null(err)) stop(err)
+
+    # output
     ans
+}
+
+# call .dofun(i, ...) in a worker, and return list(i, value)
+.bp_tag <- function(i, .dofun, ...) list(i, .dofun(i, ...))
+
+# the identifier of a call, so that each worker is initialized once per call
+.bp_token <- function()
+{
+    .PkgEnv$bp_ncall <- if (is.null(.PkgEnv$bp_ncall)) 1L else
+        .PkgEnv$bp_ncall + 1L
+    paste(Sys.getpid(), .PkgEnv$bp_ncall)
+}
+
+# finalize the workers initialized in the call 'token', and stop the workers
+#   if they are not started before the call (isup=FALSE); each worker receives
+#   one of the jobs with SnowParam and MulticoreParam, but it is not
+#   guaranteed with the other backends
+.bp_done <- function(cl, isup, token, .finalize=NULL, .initparam=NULL)
+{
+    tryCatch({
+        if (is.function(.finalize) || isup)
+        {
+            BiocParallel::bplapply(seq_len(BiocParallel::bpnworkers(cl)),
+                .bp_final, .token=token, .fun=.finalize, .param=.initparam,
+                BPPARAM=cl)
+        }
+    }, finally = if (!isup) BiocParallel::bpstop(cl))
+}
+
+# the functions below are called in the workers of BiocParallel; they are not
+#   closures, so that the caller's environment is not sent to the workers;
+#   the user-defined function and its arguments are passed in '.fun' and
+#   '.args' (a list), so that the arguments of the user-defined function
+#   (e.g., '.FUN' in seqApply()) do not match the arguments of bplapply() or
+#   these functions
+
+# initialize a worker once per call (identified by '.init$token'): load the
+#   packages, open the GDS file for load balancing or seqUnitApply() and call
+#   .initialize(); 'i' is the first job run by the worker in this call, and it
+#   is used as the process id, which is in 1..njobs for SnowParam and
+#   MulticoreParam since the first njobs jobs are sent to different workers
+.bp_init_worker <- function(i, .init)
+{
+    if (identical(.PkgEnv$bp_worker$token, .init$token)) return(invisible())
+    # the previous call is not finalized in this worker
+    .bp_clear_worker()
+    # load the packages
+    .load_package(.init$pkgname)
+    library(SeqArray, quietly=TRUE, verbose=FALSE)
+    .load_package(.init$package)
+    .PkgEnv$bp_worker <- list(id=i)
+    # export to global variables; no status file if 'i' is out of range, which
+    #   is possible with the backends other than SnowParam and MulticoreParam
+    st <- if (i <= .init$cnt) .init$st_fname
+    .init_proc(i, .init$cnt, if (is.null(st)) FALSE else st)
+    .set_proc_block(0L, .init$blcnt)
+    .PkgEnv$process_status_fname <- st
+    # open the file for load balancing or seqUnitApply()
+    if (!is.null(.init$gds.fn))
+    {
+        f <- seqOpen(.init$gds.fn, allow.duplicate=TRUE)
+        .PkgEnv$bp_worker$gdsfile <- f
+        ss <- .decompress(.init$sel[[1L]])
+        # no variant selection for seqUnitApply()
+        vs <- if (!is.null(.init$sel[[2L]])) .decompress(.init$sel[[2L]])
+        seqSetFilter(f, sample.sel=ss, variant.sel=vs, verbose=FALSE)
+        .PkgEnv$bp_worker$sample.sel <- ss
+        .PkgEnv$bp_worker$variant.sel <- vs
+    }
+    # call the user-defined function
+    if (is.function(.init$initialize)) .init$initialize(i, .init$param)
+    .PkgEnv$bp_worker$token <- .init$token
+    invisible()
+}
+
+# close the GDS file opened in the worker, and remove the state of the call
+.bp_clear_worker <- function()
+{
+    f <- .PkgEnv$bp_worker$gdsfile
+    .PkgEnv$bp_worker <- NULL
+    if (inherits(f, "SeqVarGDSClass")) seqClose(f)
+}
+
+# call .finalize() if the worker is initialized in the call '.token'
+.bp_final <- function(i, .token, .fun, .param)
+{
+    on.exit({ .bp_clear_worker(); .done_proc() })
+    s <- .PkgEnv$bp_worker
+    if (identical(s$token, .token) && is.function(.fun))
+        .fun(s$id, .param)
+    NULL
+}
+
+# call FUN(...) if 'gdsfile' is NULL
+.bp_do_0 <- function(i, .cnt, .fun, .args, .init)
+{
+    .bp_init_worker(i, .init)
+    .init_proc(i, .cnt, NULL)
+    .set_proc_block(i, NULL)
+    do.call(.fun, .args, quote=TRUE)
+}
+
+# call FUN(i, ...) if 'gdsfile' is numeric
+.bp_do_1 <- function(i, .fun, .args, .init)
+{
+    .bp_init_worker(i, .init)
+    .set_proc_block(i, NULL)
+    do.call(.fun, c(list(i), .args), quote=TRUE)
+}
+
+# call FUN(gdsfile, ...) on the i-th part of the selection
+.bp_do <- function(i, .cnt, .gds.fn, .sel, .fun, .args, .split,
+    .selection.flag, .init)
+{
+    .bp_init_worker(i, .init)
+    .init_proc(i, .cnt, NULL)
+    .set_proc_block(i, NULL)
+    # open the file
+    f <- seqOpen(.gds.fn, allow.duplicate=TRUE)
+    on.exit(seqClose(f))
+    # set filter
+    seqSetFilter(f,
+        sample.sel = .decompress(.sel[[1L]]),
+        variant.sel = .decompress(.sel[[2L]]),
+        verbose=FALSE)
+    s <- .Call(SEQ_SplitSelection, f, .split, i, .cnt, .selection.flag)
+    # call the user-defined function
+    do.call(.fun, c(if (.selection.flag) list(f, s) else list(f), .args),
+        quote=TRUE)
+}
+
+# call FUN(gdsfile, ...) on the i-th block of the selection, using the file
+#   opened in .bp_init_worker()
+.bp_do_bl <- function(i, .fun, .args, .split, .sel_idx, .bl_size,
+    .selection.flag, .totcnt, .init)
+{
+    .bp_init_worker(i, .init)
+    .set_proc_block(i, NULL)
+    w <- .PkgEnv$bp_worker
+    f <- w$gdsfile
+    # set filter
+    s <- .Call(SEQ_SplitSelectionX, f, i, .split, .sel_idx, w$variant.sel,
+        w$sample.sel, .bl_size, .selection.flag, .totcnt)
+    # call the user-defined function
+    do.call(.fun, c(if (.selection.flag) list(f, s) else list(f), .args),
+        quote=TRUE)
 }
 
 # run with a BiocParallelParam object
 .run_biocparallel <- function(cl, gdsfile, FUN, split, .combine,
     .selection.flag, .initialize, .finalize, .initparam,
-    .balancing, .bl_size, .bl_progress, .package, ...)
+    .balancing, .bl_size, .bl_progress, .status_file, .package, ...)
 {
     # number of workers
     njobs <- BiocParallel::bpnworkers(cl)
-
-    # initialize workers
-    if (is.function(.initialize))
-    {
-        BiocParallel::bplapply(seq_len(njobs),
-            function(i, .initparam) {
-                library(SeqArray, quietly=TRUE, verbose=FALSE)
-                .load_package(.package)
-                .initialize(i, .initparam)
-            }, .initparam=.initparam, BPPARAM=cl)
-    }
-    # finalize workers on exit
-    on.exit({
-        if (is.function(.finalize))
-        {
-            BiocParallel::bplapply(seq_len(njobs),
-                function(i, .initparam) {
-                    library(SeqArray, quietly=TRUE, verbose=FALSE)
-                    .load_package(.package)
-                    .finalize(i, .initparam)
-                }, .initparam=.initparam, BPPARAM=cl)
-        }
-    })
+    # the arguments passed to FUN
+    args <- list(...)
 
     if (split %in% c("by.variant", "by.sample"))
     {
         stopifnot(inherits(gdsfile, "SeqVarGDSClass"))
         dm <- .seldim(gdsfile)
-        sel <- seqGetFilter(gdsfile, .useraw=TRUE)
-        .sel_sample <- .compress(sel$sample.sel)
-        .sel_variant <- .compress(sel$variant.sel)
-    } else {
+        # no more jobs than the selected variants or samples
+        njobs <- min(njobs, if (split == "by.variant") dm[3L] else dm[2L])
+    } else
         dm <- NULL
-        .sel_sample <- raw()
-        .sel_variant <- raw()
+    # the selection used in the workers (also for split="none")
+    if (inherits(gdsfile, "SeqVarGDSClass"))
+    {
+        sel <- seqGetFilter(gdsfile, .useraw=TRUE)
+        sel$sample.sel <- .compress(sel$sample.sel)
+        sel$variant.sel <- .compress(sel$variant.sel)
+    } else {
+        sel <- list(sample.sel=raw(), variant.sel=raw())
+    }
+    # status files
+    st_fname <- NULL
+    if (isTRUE(.status_file))
+    {
+        st_fname <- .get_status_filename(njobs)
+        file.create(st_fname, showWarnings=FALSE)
+        on.exit(unlink(st_fname, force=TRUE))
     }
 
-    # get GDS filename
-    .gds.fn <- NULL
-    if (inherits(gdsfile, "SeqVarGDSClass"))
-        .gds.fn <- gdsfile$filename
+    # start the workers if needed, so that they are kept during this call
+    isup <- BiocParallel::bpisup(cl)
+    if (!isup) BiocParallel::bpstart(cl)
+    token <- .bp_token()
+    init <- list(token=token,
+        pkgname = if (inherits(gdsfile, "SeqVarGDSClass"))
+            attr(gdsfile$filename, "pkgname"),
+        package=.package, cnt=njobs, blcnt=0L, st_fname=st_fname,
+        initialize=.initialize, param=.initparam)
+    # finalize the workers on exit, and stop the workers if started here
+    on.exit(.bp_done(cl, isup, token, .finalize, .initparam), add=TRUE)
 
     if (!isTRUE(.balancing) || split == "none")
     {
@@ -918,55 +1124,25 @@ seqStorageOption <- function(compression=c("ZIP_RA", "ZIP_RA.fast",
         if (is.null(gdsfile))
         {
             # no GDS file: call FUN(...) on each worker
-            ans <- BiocParallel::bplapply(seq_len(njobs),
-                function(.proc_idx, .proc_cnt, .FUN, ...)
-                {
-                    library(SeqArray, quietly=TRUE, verbose=FALSE)
-                    .load_package(.package)
-                    .init_proc(.proc_idx, .proc_cnt, NULL)
-                    .FUN(...)
-                },
-                .proc_cnt=njobs, .FUN=FUN, ..., BPPARAM=cl)
+            ans <- .bp_dynamic_call(cl, njobs, .dofun = .bp_do_0,
+                .combinefun=.combine, .cnt=njobs, .fun=FUN, .args=args,
+                .init=init)
 
         } else if (inherits(gdsfile, "SeqVarGDSClass"))
         {
             # GDS file: open, set filter, split, call FUN
-            ans <- BiocParallel::bplapply(seq_len(njobs),
-                function(.proc_idx, .proc_cnt, .gds.fn, .sel_sample,
-                    .sel_variant, .FUN, .split, .selection.flag, ...)
-                {
-                    library(SeqArray, quietly=TRUE, verbose=FALSE)
-                    .load_package(.package)
-                    .init_proc(.proc_idx, .proc_cnt, NULL)
-                    f <- seqOpen(.gds.fn, allow.duplicate=TRUE)
-                    on.exit(seqClose(f))
-                    seqSetFilter(f,
-                        sample.sel = .decompress(.sel_sample),
-                        variant.sel = .decompress(.sel_variant),
-                        verbose=FALSE)
-                    .s <- .Call(SEQ_SplitSelection, f, .split, .proc_idx,
-                        .proc_cnt, .selection.flag)
-                    if (.selection.flag) .FUN(f, .s, ...) else .FUN(f, ...)
-                },
-                .proc_cnt=njobs, .gds.fn=.gds.fn,
-                .sel_sample=.sel_sample, .sel_variant=.sel_variant,
-                .FUN=FUN, .split=split, .selection.flag=.selection.flag,
-                ..., BPPARAM=cl)
+            ans <- .bp_dynamic_call(cl, njobs, .dofun = .bp_do,
+                .combinefun=.combine, .cnt=njobs, .gds.fn=gdsfile$filename,
+                .sel=sel, .fun=FUN, .args=args, .split=split,
+                .selection.flag=.selection.flag, .init=init)
 
         } else {
             # numeric gdsfile: call FUN(i, ...) for i in 1:gdsfile
             stopifnot(is.numeric(gdsfile))
-            totnum <- as.integer(gdsfile)
-            ans <- BiocParallel::bplapply(seq_len(totnum),
-                function(.i, .njobs, .FUN, ...)
-                {
-                    library(SeqArray, quietly=TRUE, verbose=FALSE)
-                    .load_package(.package)
-                    .init_proc(0L, .njobs, NULL)
-                    .set_proc_block(.i, NULL)
-                    .FUN(.i, ...)
-                },
-                .njobs=njobs, .FUN=FUN, ..., BPPARAM=cl)
+            init$blcnt <- as.integer(gdsfile)
+            ans <- .bp_dynamic_call(cl, as.integer(gdsfile),
+                .dofun = .bp_do_1, .combinefun=.combine, .fun=FUN,
+                .args=args, .init=init)
         }
 
     } else {
@@ -974,51 +1150,31 @@ seqStorageOption <- function(compression=c("ZIP_RA", "ZIP_RA.fast",
 
         # selection indexing
         v <- .prepare_balancing(gdsfile, njobs, dm, split, .bl_size)
-        .bl_size <- v$bl_size
-        nblock <- v$nblock
-        .sel_idx <- v$sel_idx
-        .totcnt <- v$totcnt
-        .is_by_variant <- (split == "by.variant")
+        progress <- if (.bl_progress) .seqProgress(v$totcnt) else NULL
+        updatefun <- if (.bl_progress)
+            function(i) .seqProgForward(progress, v$bl_size) else NULL
 
-        # use BiocParallel's progress bar if requested
-        if (isTRUE(.bl_progress))
-        {
-            old_prog <- BiocParallel::bpprogressbar(cl)
-            BiocParallel::bpprogressbar(cl) <- TRUE
-            on.exit({
-                BiocParallel::bpprogressbar(cl) <- old_prog
-            }, add=TRUE)
-        }
+        # the file is opened once in each worker
+        init$gds.fn <- gdsfile$filename
+        init$sel <- sel
+        init$blcnt <- v$nblock
+        remove(sel)
 
-        # distribute blocks across workers via bplapply
-        ans <- BiocParallel::bplapply(seq_len(nblock),
-            function(.block_idx, .gds.fn, .sel_sample, .sel_variant,
-                .FUN, .split, .sel_idx, .bl_size, .selection.flag, .totcnt,
-                ...)
-            {
-                library(SeqArray, quietly=TRUE, verbose=FALSE)
-                .load_package(.package)
-                f <- seqOpen(.gds.fn, allow.duplicate=TRUE)
-                on.exit(seqClose(f))
-                seqSetFilter(f,
-                    sample.sel = .decompress(.sel_sample),
-                    variant.sel = .decompress(.sel_variant),
-                    verbose=FALSE)
-                .s <- .Call(SEQ_SplitSelectionX, f, .block_idx, .split,
-                    .sel_idx, .decompress(.sel_variant),
-                    .decompress(.sel_sample),
-                    .bl_size, .selection.flag, .totcnt)
-                if (.selection.flag) .FUN(f, .s, ...) else .FUN(f, ...)
-            },
-            .gds.fn=.gds.fn, .sel_sample=.sel_sample,
-            .sel_variant=.sel_variant, .FUN=FUN, .split=.is_by_variant,
-            .sel_idx=.sel_idx, .bl_size=.bl_size,
-            .selection.flag=.selection.flag, .totcnt=.totcnt,
-            ..., BPPARAM=cl)
+        # distribute blocks across workers
+        ans <- .bp_dynamic_call(cl, v$nblock, .dofun = .bp_do_bl,
+            .combinefun=.combine, .updatefun=updatefun, .fun=FUN, .args=args,
+            .split=(split=="by.variant"), .sel_idx=v$sel_idx,
+            .bl_size=v$bl_size, .selection.flag=.selection.flag,
+            .totcnt=v$totcnt, .init=init)
+
+        # close progress object
+        remove(progress)
     }
 
-    # combine results
-    .bp_combine_results(ans, .combine)
+    # return
+    if (is.list(ans) & identical(.combine, "unlist"))
+        ans <- unlist(ans, recursive=FALSE)
+    ans
 }
 
 
@@ -1108,7 +1264,7 @@ seqParallel <- function(cl=seqGetParallel(), gdsfile, FUN,
         ## multiple processes with a predefined cluster from BiocParallel
         ans <- .run_biocparallel(cl, gdsfile, FUN, split, .combine,
             .selection.flag, .initialize, .finalize, .initparam,
-            .balancing, .bl_size, .bl_progress, .package, ...)
+            .balancing, .bl_size, .bl_progress, .status_file, .package, ...)
 
     } else {
         # forking processes, when cl is an integer
@@ -1163,7 +1319,20 @@ seqParApply <- function(cl=seqGetParallel(), x, FUN, .balancing=TRUE, ...)
     } else if (inherits(cl, "BiocParallelParam"))
     {
         # multiple cores
-        ans <- BiocParallel::bplapply(x, FUN, ..., BPPARAM=cl)
+        if (.balancing)
+        {
+            # one task per element, sent to an idle worker like clusterApplyLB();
+            #   the workers not started are started once for the call, otherwise
+            #   MulticoreParam forks a new process for each task
+            if (!BiocParallel::bpisup(cl))
+            {
+                BiocParallel::bpstart(cl)
+                on.exit(BiocParallel::bpstop(cl))
+            }
+            ans <- BiocParallel::bplapply(x, FUN, ..., BPPARAM=cl,
+                BPOPTIONS=BiocParallel::bpoptions(tasks=length(x)))
+        } else
+            ans <- BiocParallel::bplapply(x, FUN, ..., BPPARAM=cl)
     } else {
         # multiple cores
         if (!inherits(cl, "cluster"))

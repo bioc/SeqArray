@@ -417,6 +417,63 @@ test.parallel_balancing <- function()
 }
 
 
+test.parallel_cluster <- function()
+{
+	# open the GDS file
+	f <- seqOpen(seqExampleFileName("gds"), allow.duplicate=TRUE)
+	on.exit(seqClose(f))
+	cl <- makeCluster(2)
+	on.exit(stopCluster(cl), add=TRUE)
+
+	# the package in attr(gdsfile$filename, "pkgname") is loaded in the nodes
+	units <- seqUnitSlidingWindows(f, win.size=50000L, win.shift=25000L,
+		verbose=FALSE)
+	f2 <- f
+	f2$filename <- structure(f$filename, pkgname="tools")
+	v <- seqUnitApply(f2, units, "genotype", function(x) file_ext("a.txt"),
+		as.is="unlist", parallel=cl)
+	checkIdentical(rep("txt", length(units$index)), v,
+		"seqUnitApply() with a cluster, pkgname")
+
+	# split="none", each process uses all selected samples and variants
+	seqSetFilter(f, sample.sel=1:10, variant.sel=seq(1L, 1348L, 2L),
+		verbose=FALSE)
+	v <- seqParallel(cl, f, function(g) SeqArray:::.seldim(g)[2:3],
+		split="none", .combine="list")
+	checkIdentical(rep(list(c(10L, 674L)), 2L), v,
+		"seqParallel(, split='none') with a cluster")
+
+	# no more processes than the selected variants or samples
+	seqSetFilter(f, sample.sel=5L, variant.sel=3L, verbose=FALSE)
+	pv <- function(g) c(SeqArray:::.seldim(g)[2:3], SeqArray:::process_index,
+		SeqArray:::process_count)
+	for (bl in c(FALSE, TRUE))
+	{
+		for (sp in c("by.variant", "by.sample"))
+		{
+			v <- seqParallel(cl, f, pv, split=sp, .balancing=bl,
+				.combine="list")
+			checkIdentical(list(c(1L, 1L, 1L, 1L)), v, paste0(
+				"seqParallel() with a cluster, 1 selected, ", sp,
+				", .balancing=", bl))
+		}
+	}
+
+	# the status files are removed
+	seqResetFilter(f, verbose=FALSE)
+	st <- list.files(".", "^_parallel_.*\\.txt$")
+	for (bl in c(FALSE, TRUE))
+	{
+		seqParallel(cl, f, function(g) NULL, .balancing=bl, .status_file=TRUE)
+		checkIdentical(st, list.files(".", "^_parallel_.*\\.txt$"),
+			paste0("seqParallel() with a cluster, .status_file=TRUE, ",
+			".balancing=", bl))
+	}
+
+	invisible()
+}
+
+
 test.sp_dosage <- function()
 {
 	f <- seqOpen(seqExampleFileName("gds"))
