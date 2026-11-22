@@ -1,4 +1,4 @@
-CHANGES IN VERSION 1.53.6
+CHANGES IN VERSION 1.54.0
 -------------------------
 
 NEW FEATURES
@@ -10,8 +10,12 @@ NEW FEATURES
       of a cluster or a `BiocParallelParam` object, or in the current R
       process before forking or when only one process is used
 
-    o `seqUnitApply()` and `seqParallelSetup()` accept a `BiocParallelParam`
-      object
+    o `seqParallel()`, `seqUnitApply()` and `seqParallelSetup()` accept a
+      `BiocParallelParam` object
+
+    o AARCH64 NEON SIMD optimization for vectorized internal functions,
+      providing hardware-accelerated performance on Apple Silicon and other
+      ARM64 platforms
 
 UTILITIES
 
@@ -56,6 +60,43 @@ UTILITIES
 
     o `seqVCF2GDS()` parses diploid genotypes with single-digit alleles
       (e.g., "0|1" and "0/1") faster
+
+    o `seqVCF2GDS(, parallel=n)`: each parallel job seeks to its starting
+      position directly instead of reading the file from the beginning (for
+      a plain text or BGZF file, but not a gzip file), no tabix index is
+      needed, and the temporary files are merged while the other jobs are
+      still running
+
+    o new `split` in `seqVCF2GDS()`: "block" (default) splits BGZF files at
+      the block boundaries without counting the variants; "variant" counts
+      the variants (in parallel for BGZF files) and splits by the variant
+      index, which is used if not all files are BGZF or 'start', 'count' or
+      'variant_count' is given
+
+    o SeqArray no longer needs the Rsamtools package: reading and writing
+      the BGZF format (i.e., bgzip) and building the .csi index are
+      implemented in the package using zlib, so they work on all platforms
+      including Windows; `use_Rsamtools` in `seqVCF_Header()`,
+      `seqVCF2GDS()` and `seqGDS2VCF()` is deprecated and ignored
+
+    o `seqGDS2VCF()` always outputs a BGZF file (i.e., bgzip) when the file
+      name ends with .gz or .bgz, together with a .csi index instead of a
+      .tbi index, since the position in a .tbi index is limited to 2^29
+      (~512Mb)
+
+    o `seqUnitMerge()` now properly supports merging more than two
+      'SeqUnitListClass' objects via '...'
+
+    o new `seqUnitSetDiff()` to remove variant indices of one unit list
+      from another, returning the set-difference version of units
+
+    o 'val' in `seqAddValue()` can be a function returning the data block by
+      block, when adding a variable to "annotation/info": the blocks are
+      written to the GDS file one by one, so the memory usage does not depend
+      on the total number of variants ('packed' and 'packed.idx' are ignored
+      in this case, since the data are unknown before writing). New 'param'
+      in `seqAddValue()`, passed to the second argument of the user-defined
+      function 'val(k, param)'
 
 BUG FIXES
 
@@ -119,60 +160,6 @@ BUG FIXES
     o `seqParallel()` and `seqUnitApply()` with a `BatchtoolsParam` object
       failed with "Registry must be empty" after all jobs were done, if
       `.finalize` was given or the workers had been started by the user
-
-
-CHANGES IN VERSION 1.53.3
--------------------------
-
-NEW FEATURES
-
-    o AARCH64 NEON SIMD optimization for vectorized internal functions,
-      providing hardware-accelerated performance on Apple Silicon and other
-      ARM64 platforms
-
-    o `seqParallel()` supports a `BiocParallelParam` object for the `cl`
-      argument
-
-UTILITIES
-
-    o `seqVCF2GDS(, parallel=n)`: each parallel job seeks to its starting
-      position directly instead of reading the file from the beginning (for
-      a plain text or BGZF file, but not a gzip file), no tabix index is
-      needed, and the temporary files are merged while the other jobs are
-      still running
-
-    o new `split` in `seqVCF2GDS()`: "block" (default) splits BGZF files at
-      the block boundaries without counting the variants; "variant" counts
-      the variants (in parallel for BGZF files) and splits by the variant
-      index, which is used if not all files are BGZF or 'start', 'count' or
-      'variant_count' is given
-
-    o SeqArray no longer needs the Rsamtools package: reading and writing
-      the BGZF format (i.e., bgzip) and building the .csi index are
-      implemented in the package using zlib, so they work on all platforms
-      including Windows; `use_Rsamtools` in `seqVCF_Header()`,
-      `seqVCF2GDS()` and `seqGDS2VCF()` is deprecated and ignored
-
-    o `seqGDS2VCF()` always outputs a BGZF file (i.e., bgzip) when the file
-      name ends with .gz or .bgz, together with a .csi index instead of a
-      .tbi index, since the position in a .tbi index is limited to 2^29
-      (~512Mb)
-
-    o `seqUnitMerge()` now properly supports merging more than two
-      'SeqUnitListClass' objects via '...'
-
-    o new `seqUnitSetDiff()` to remove variant indices of one unit list
-      from another, returning the set-difference version of units
-
-    o 'val' in `seqAddValue()` can be a function returning the data block by
-      block, when adding a variable to "annotation/info": the blocks are
-      written to the GDS file one by one, so the memory usage does not depend
-      on the total number of variants ('packed' and 'packed.idx' are ignored
-      in this case, since the data are unknown before writing). New 'param'
-      in `seqAddValue()`, passed to the second argument of the user-defined
-      function 'val(k, param)'
-
-BUG FIXES
 
     o `seqVCF2GDS(, start=, count=, parallel=n)` returned more variants than
       requested, and split the variants wrongly when 'start' was not 1;
